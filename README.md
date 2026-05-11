@@ -2,7 +2,7 @@
 
 [![skills.sh](https://skills.sh/b/oCOZYo/docs-to-wiki)](https://skills.sh/oCOZYo/docs-to-wiki)
 
-> Four Claude Code skills that convert PDF, DOCX, PPTX to structured Markdown — and synthesize them into an Obsidian wiki. No API key required.
+> Point it at a folder of documents — PDFs, slides, Word reports — and get a structured, searchable Obsidian wiki. Powered by PaddleOCR for scanned documents and complex layouts, with Claude Vision for diagrams and charts. Zero API key required.
 
 [English](#english) | [中文](#中文)
 
@@ -12,12 +12,17 @@
 
 ### What it does
 
-- **docs-to-wiki** (orchestrator) — takes a folder of mixed documents, runs the three converters below in parallel, OCRs scanned PDFs, then synthesizes a categorized Obsidian wiki with wikilink cross-references
-- **pdf-to-md** — auto-detects native-text PDFs (instant via `pymupdf`) vs scanned PDFs (PaddleOCR). Extracts large images to disk as `![](...)` placeholders
-- **docx-to-md** — lossless text + table extraction via `python-docx`. Embedded images saved to disk as placeholders
-- **pptx-to-md** — renders every slide as a PNG via LibreOffice, preserving spatial layouts (flowcharts, side-by-side comparisons, charts) that shape-text extraction silently drops
+Your desktop is full of documents — sales decks, audit reports, technical specs, scanned contracts — scattered across formats and folders. This skill collection turns that chaos into a structured Obsidian wiki with categorized pages, wikilink cross-references, and searchable source files.
 
-All three converters use **agent mode** by default: scripts do deterministic extraction; the calling Claude Code agent describes images using its built-in Vision — no `ANTHROPIC_API_KEY` needed. For large jobs (>5 images), the agent spawns subagents to keep image bytes out of the main context.
+**Core pipeline (docs-to-wiki):** point at a directory, and the orchestrator collects all documents, converts them in parallel, OCRs scanned PDFs, merges everything, then synthesizes a categorized wiki with LLM-generated pages.
+
+**Three atomic converters** handle the format-level work:
+
+- **pdf-to-md** — auto-detects native-text PDFs (instant via `pymupdf`) vs scanned/image PDFs. Scanned documents go through [PaddleOCR](https://aistudio.baidu.com/paddleocr), a state-of-the-art OCR engine with layout analysis — it handles multi-column text, tables, mixed Chinese/English, and complex page structures that traditional OCR tools choke on
+- **docx-to-md** — lossless text + table extraction via `python-docx`. Embedded diagrams and screenshots are saved to disk and described by Claude Vision
+- **pptx-to-md** — renders every slide as a high-fidelity PNG via LibreOffice. This preserves spatial relationships — flowchart arrows, side-by-side comparisons, four-quadrant charts, numbered callouts — that shape-text extraction (pandoc, markitdown) silently drops
+
+All three converters use **agent mode** by default: scripts do deterministic extraction; the calling Claude Code agent describes images using its built-in Vision — no `ANTHROPIC_API_KEY` needed. For large jobs (>5 images), the agent spawns subagents to keep image bytes out of the main context. Tested on 8,430 slides without context overflow.
 
 ### Install
 
@@ -74,12 +79,17 @@ MIT
 
 ### 功能概述
 
-- **docs-to-wiki**（编排器）—— 读取一个文档目录，并行调用下面三个转换器，OCR 扫描 PDF，最后合成一个带 wikilink 交叉引用的 Obsidian 知识库
-- **pdf-to-md** —— 自动识别原生文字 PDF（`pymupdf` 秒级提取）和扫描 PDF（PaddleOCR）。大图提取到磁盘，以 `![](...)` 占位符嵌入 Markdown
-- **docx-to-md** —— 通过 `python-docx` 无损提取文字和表格。嵌入图片保存到磁盘作为占位符
-- **pptx-to-md** —— 通过 LibreOffice 将每张幻灯片渲染为 PNG，保留流程图、左右对比、图表等空间布局信息
+桌面堆满了文档 —— 销售 PPT、审计报告、技术方案、扫描合同 —— 格式各异、散落各处。这套 skill 集合把这堆杂乱的文件变成结构化的 Obsidian 知识库：分类页面、wikilink 交叉引用、可检索的源文件。
 
-三个转换器默认使用 **agent 模式**：脚本负责确定性提取；Claude Code agent 用自带的 Vision 能力描述图片 —— **不需要 ANTHROPIC_API_KEY**。大批量时（>5 张图）agent 自动 spawn subagent，图片字节不进入主上下文。
+**核心流水线（docs-to-wiki）**：指向一个目录，编排器自动采集所有文档、并行转换、OCR 扫描件、合并输出，最后用 LLM 合成分门别类的 wiki 页面。
+
+**三个原子转换器**处理格式级工作：
+
+- **pdf-to-md** —— 自动区分原生文字 PDF（`pymupdf` 秒级提取）和扫描/图片 PDF。扫描件走 [PaddleOCR](https://aistudio.baidu.com/paddleocr) —— 业界领先的 OCR 引擎，带版面分析能力，能处理多栏排版、表格、中英混排、复杂页面结构，传统 OCR 工具搞不定的它都能搞定
+- **docx-to-md** —— 通过 `python-docx` 无损提取文字和表格。嵌入的图表、截图保存到磁盘，由 Claude Vision 描述
+- **pptx-to-md** —— 通过 LibreOffice 将每张幻灯片渲染为高清 PNG。保留流程图箭头方向、左右对比、四象限图表、编号标注等空间布局信息 —— pandoc、markitdown 等 shape-text 提取工具会静默丢失这些
+
+三个转换器默认使用 **agent 模式**：脚本负责确定性提取；Claude Code agent 用自带的 Vision 能力描述图片 —— **不需要 ANTHROPIC_API_KEY**。大批量时（>5 张图）agent 自动 spawn subagent，图片字节不进入主上下文。实测 8430 张幻灯片无上下文溢出。
 
 ### 安装
 
