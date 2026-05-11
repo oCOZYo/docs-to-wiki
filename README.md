@@ -1,6 +1,6 @@
 # Doc-to-MD Skills
 
-[![Skills.sh](https://skills.sh/badge)](https://skills.sh/oCOZYo/doc-to-md-skills)
+[![skills.sh](https://skills.sh/b/oCOZYo/doc-to-md-skills)](https://skills.sh/oCOZYo/doc-to-md-skills)
 
 Three skills that convert business documents (PDF, DOCX, PPTX) to structured Markdown using Vision LLM.
 
