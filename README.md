@@ -57,10 +57,16 @@ Installs all four skills. Add `-g` for global install, or `--skill pdf-to-md` to
 # Python dependencies
 pip install pymupdf python-docx requests pyyaml
 
-# PaddleOCR — only for scanned PDFs (free tier available)
+# PaddleOCR — for scanned PDFs + PPTX text-heavy slides
+# Option A: Cloud API (recommended, no local setup)
 export PADDLEOCR_TOKEN="your_token"
 export PADDLEOCR_API_URL="https://xxxx.aistudio-app.com/layout-parsing"
-# Sign up: https://aistudio.baidu.com/paddleocr
+# Sign up: https://aistudio.baidu.com/paddleocr (free tier)
+
+# Option B: Local deployment (MLX VLM server + PaddleOCR-VL)
+pip install paddleocr[doc-parser]
+# Start MLX server with PaddleOCR-VL model, then:
+export MLX_SERVER_URL=http://localhost:8111/
 
 # LibreOffice — only for pptx-to-md
 # macOS:  brew install --cask libreoffice
@@ -124,10 +130,16 @@ npx skills add oCOZYo/docs-to-wiki
 # Python 依赖
 pip install pymupdf python-docx requests pyyaml
 
-# PaddleOCR —— 仅扫描 PDF 需要（有免费额度）
+# PaddleOCR —— 扫描 PDF + PPTX 文字密集页面
+# 方案 A：云端 API（推荐，无需本地部署）
 export PADDLEOCR_TOKEN="your_token"
 export PADDLEOCR_API_URL="https://xxxx.aistudio-app.com/layout-parsing"
-# 注册：https://aistudio.baidu.com/paddleocr
+# 注册：https://aistudio.baidu.com/paddleocr（免费额度）
+
+# 方案 B：本地部署（MLX VLM 服务器 + PaddleOCR-VL）
+pip install paddleocr[doc-parser]
+# 启动 MLX 服务器加载 PaddleOCR-VL 模型后：
+export MLX_SERVER_URL=http://localhost:8111/
 
 # LibreOffice —— 仅 pptx-to-md 需要
 # macOS:  brew install --cask libreoffice

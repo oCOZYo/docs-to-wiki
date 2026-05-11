@@ -53,10 +53,18 @@ Before describing slides, classify each one to determine the best processing pat
 
 **Type B (text_heavy)** — use PaddleOCR + Vision for best accuracy:
 1. Run PaddleOCR to extract precise text and layout structure:
+
+   **Cloud mode** (no local setup, requires API credentials):
    ```bash
    export PADDLEOCR_TOKEN="..."
    export PADDLEOCR_API_URL="..."
    python3 "${CLAUDE_SKILL_DIR}/scripts/slide_ocr.py" <slide.png>
+   ```
+
+   **Local mode** (MLX VLM server with PaddleOCR-VL, no API key needed):
+   ```bash
+   python3 "${CLAUDE_SKILL_DIR}/scripts/slide_ocr.py" <slide.png> \
+     --server_url http://localhost:8111/
    ```
 2. Read the PNG with the Read tool (for visual elements)
 3. Combine both: use PaddleOCR's extracted text as the authoritative source for text content, and Vision for understanding diagrams/charts/visual elements that PaddleOCR can't interpret
@@ -112,7 +120,9 @@ python3 "${CLAUDE_SKILL_DIR}/scripts/pptx_to_md.py" \
 
 - Python 3.10+ with `pymupdf`
 - LibreOffice (`soffice` command). macOS: `brew install --cask libreoffice`. Debian/Ubuntu: `apt install libreoffice`.
-- For PaddleOCR routing on text-heavy slides: `requests` + `PADDLEOCR_TOKEN` / `PADDLEOCR_API_URL` (free tier at https://aistudio.baidu.com/paddleocr)
+- For PaddleOCR routing on text-heavy slides (choose one):
+  - **Cloud**: `pip install requests` + `PADDLEOCR_TOKEN` / `PADDLEOCR_API_URL` (free tier at https://aistudio.baidu.com/paddleocr)
+  - **Local**: `pip install paddleocr[doc-parser]` + MLX VLM server running PaddleOCR-VL
 - For `--api-key` standalone mode only: `pip install anthropic`
 
 ## Notes
