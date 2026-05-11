@@ -1,7 +1,8 @@
 {
-  "name": "doc-to-md-skills",
+  "name": "docs-to-wiki",
   "version": "1.0.0",
   "skills": [
+    "skills/docs-to-wiki",
     "skills/pdf-to-md",
     "skills/docx-to-md",
     "skills/pptx-to-md"

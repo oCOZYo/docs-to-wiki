@@ -1,9 +1,9 @@
 {
-  "name": "doc-to-md-skills",
+  "name": "docs-to-wiki",
   "version": "1.0.0",
-  "description": "Claude Code skills: convert PDF, DOCX, PPTX to Markdown with Vision LLM",
+  "description": "Claude Code skills: convert PDF, DOCX, PPTX to Markdown and build Obsidian wikis",
   "type": "module",
-  "keywords": ["claude-code", "skills", "pdf", "docx", "pptx", "markdown", "vision"],
+  "keywords": ["claude-code", "skills", "pdf", "docx", "pptx", "markdown", "vision", "wiki", "obsidian", "knowledge-base"],
   "author": "oCOZYo",
   "license": "MIT"
 }

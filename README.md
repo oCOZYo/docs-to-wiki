@@ -1,8 +1,8 @@
-# Doc-to-MD Skills
+# Docs-to-Wiki
 
-[![skills.sh](https://skills.sh/b/oCOZYo/doc-to-md-skills)](https://skills.sh/oCOZYo/doc-to-md-skills)
+[![skills.sh](https://skills.sh/b/oCOZYo/docs-to-wiki)](https://skills.sh/oCOZYo/docs-to-wiki)
 
-> Three skills that convert PDF, DOCX, PPTX to Markdown — preserving diagrams, charts, and visual layouts that text-only converters lose.
+> Four Claude Code skills that convert PDF, DOCX, PPTX to structured Markdown — and synthesize them into an Obsidian wiki. No API key required.
 
 [English](#english) | [中文](#中文)
 
@@ -10,98 +10,59 @@
 
 ## English
 
-### Why these skills
+### What it does
 
-Most document-to-Markdown tools either drop images entirely or OCR everything (slow, noisy, loses structure). These skills are different:
+- **docs-to-wiki** (orchestrator) — takes a folder of mixed documents, runs the three converters below in parallel, OCRs scanned PDFs, then synthesizes a categorized Obsidian wiki with wikilink cross-references
+- **pdf-to-md** — auto-detects native-text PDFs (instant via `pymupdf`) vs scanned PDFs (PaddleOCR). Extracts large images to disk as `![](...)` placeholders
+- **docx-to-md** — lossless text + table extraction via `python-docx`. Embedded images saved to disk as placeholders
+- **pptx-to-md** — renders every slide as a PNG via LibreOffice, preserving spatial layouts (flowcharts, side-by-side comparisons, charts) that shape-text extraction silently drops
 
-- **Zero-config Vision** — scripts extract images to disk and emit standard Markdown `![](...)` placeholders. The calling Claude Code agent describes the images using its built-in Vision capability. **No separate Anthropic API key required** — it just works with your Claude Code subscription.
-- **Auto-routes by content type** — text PDFs extract instantly via `pymupdf` (seconds, zero API cost); only scanned PDFs go through OCR
-- **Per-slide PPTX rendering** — every slide is rendered as a PNG and described in full, preserving spatial relationships (side-by-side comparisons, arrow directions, four-quadrant diagrams) that shape-text extraction can't capture
-- **Scales to any size** — for large jobs (>5 images, or many files), the agent spawns subagents to keep image bytes out of its own context. Tested on 8,430 slides without context overflow.
-
-For backend / cron use cases outside Claude Code, each script accepts an optional `--api-key` flag for standalone Vision processing.
+All three converters use **agent mode** by default: scripts do deterministic extraction; the calling Claude Code agent describes images using its built-in Vision — no `ANTHROPIC_API_KEY` needed. For large jobs (>5 images), the agent spawns subagents to keep image bytes out of the main context.
 
 ### Install
 
 ```bash
-npx skills add oCOZYo/doc-to-md-skills
+npx skills add oCOZYo/docs-to-wiki
 ```
 
-Installs all three skills into the current project's `.agents/skills/`. Add `-g` to install globally for the current user, or `--skill pdf-to-md` to install just one.
+Installs all four skills. Add `-g` for global install, or `--skill pdf-to-md` to install just one.
 
-### Setup
+### Quick Start
 
-#### 1. Python environment
-
-```bash
-python3 -m venv ~/.venvs/doc-to-md
-source ~/.venvs/doc-to-md/bin/activate
-pip install pymupdf python-docx requests
-```
-
-#### 2. PaddleOCR (only needed for scanned PDFs)
-
-Native-text PDFs are handled by `pymupdf` and don't need OCR. Only scanned PDFs (image-based, no text layer) trigger this path.
-
-```bash
-export PADDLEOCR_TOKEN="your_token"
-export PADDLEOCR_API_URL="https://xxxx.aistudio-app.com/layout-parsing"
-```
-
-Sign up and provision an inference endpoint at https://aistudio.baidu.com/paddleocr — free tier available. After creating an endpoint, copy the URL and access token from your AI Studio dashboard.
-
-#### 3. LibreOffice (only needed for `pptx-to-md`)
-
-```bash
-# macOS
-brew install --cask libreoffice
-
-# Debian/Ubuntu
-apt install libreoffice
-```
-
-Required to convert PPTX → PDF before rendering each slide.
-
-#### 4. (Optional) Standalone mode
-
-For backend automation outside Claude Code:
-
-```bash
-pip install anthropic
-# then pass --api-key to any script:
-python pdf_to_md.py --input docs/ --output out/ --api-key sk-ant-...
-```
-
-### Usage
-
-The skills activate automatically when you ask Claude Code to convert documents:
-
+**Single document conversion:**
 - *"Convert this PDF to Markdown"* → `pdf-to-md`
 - *"Extract this Word doc"* → `docx-to-md`
 - *"Turn these slides into notes"* → `pptx-to-md`
 
-The agent will: run the script (deterministic extraction), then read each `![](...)` placeholder and describe it inline using its Vision capability.
-
-Or run the scripts directly:
-
-```bash
-# PDF: auto-detect text vs scanned, extract large images
-python skills/pdf-to-md/scripts/pdf_to_md.py --input docs/ --output out/
-
-# DOCX: extract text + tables, save embedded images
-python skills/docx-to-md/scripts/docx_to_md.py --input report.docx --output out/
-
-# PPTX: render each slide as a PNG
-python skills/pptx-to-md/scripts/pptx_to_md.py --input deck.pptx --output out/
-```
+**Full knowledge base:**
+- *"Build a wiki from the docs in ./corpus/"* → `docs-to-wiki` orchestrates the complete pipeline
 
 ### Skills
 
-| Skill | Input | Method | Optional deps |
-|-------|-------|--------|---------------|
-| [pdf-to-md](skills/pdf-to-md/) | PDF, JPG, PNG, BMP, TIFF, WEBP | `pymupdf` direct + PaddleOCR fallback | PaddleOCR for scanned PDFs |
-| [docx-to-md](skills/docx-to-md/) | DOCX | `python-docx` + extracted images | — |
-| [pptx-to-md](skills/pptx-to-md/) | PPTX, PPSX | LibreOffice → PNG per slide | LibreOffice |
+| Skill | Input | Method |
+|-------|-------|--------|
+| [docs-to-wiki](skills/docs-to-wiki/) | Directory of mixed docs | Collect → Convert → OCR → Merge → Synthesize wiki |
+| [pdf-to-md](skills/pdf-to-md/) | PDF, JPG, PNG, BMP, TIFF, WEBP | `pymupdf` direct + PaddleOCR fallback |
+| [docx-to-md](skills/docx-to-md/) | DOCX | `python-docx` + extracted images |
+| [pptx-to-md](skills/pptx-to-md/) | PPTX, PPSX | LibreOffice → per-slide PNG |
+
+### Setup
+
+```bash
+# Python dependencies
+pip install pymupdf python-docx requests pyyaml
+
+# PaddleOCR — only for scanned PDFs (free tier available)
+export PADDLEOCR_TOKEN="your_token"
+export PADDLEOCR_API_URL="https://xxxx.aistudio-app.com/layout-parsing"
+# Sign up: https://aistudio.baidu.com/paddleocr
+
+# LibreOffice — only for pptx-to-md
+# macOS:  brew install --cask libreoffice
+# Linux:  apt install libreoffice
+```
+
+For backend automation outside Claude Code, pass `--api-key` to any script.
 
 ### License
 
@@ -111,98 +72,59 @@ MIT
 
 ## 中文
 
-### 为什么用这套 skills
+### 功能概述
 
-市面上的文档转 Markdown 工具，要么完全丢弃图片，要么对所有内容做 OCR（慢、噪音大、丢失结构）。这套 skills 不一样：
+- **docs-to-wiki**（编排器）—— 读取一个文档目录，并行调用下面三个转换器，OCR 扫描 PDF，最后合成一个带 wikilink 交叉引用的 Obsidian 知识库
+- **pdf-to-md** —— 自动识别原生文字 PDF（`pymupdf` 秒级提取）和扫描 PDF（PaddleOCR）。大图提取到磁盘，以 `![](...)` 占位符嵌入 Markdown
+- **docx-to-md** —— 通过 `python-docx` 无损提取文字和表格。嵌入图片保存到磁盘作为占位符
+- **pptx-to-md** —— 通过 LibreOffice 将每张幻灯片渲染为 PNG，保留流程图、左右对比、图表等空间布局信息
 
-- **零配置 Vision** —— 脚本把图片提取到磁盘，在 Markdown 里用标准的 `![](...)` 占位符。调用方 Claude Code agent 用自带的 Vision 能力描述图片。**不需要单独申请 Anthropic API key**，用你的 Claude Code 订阅就能跑。
-- **按内容类型自动分流** —— 原生文字 PDF 用 `pymupdf` 秒级提取，零 API 消耗；只有扫描 PDF 才走 OCR
-- **PPTX 逐张幻灯片渲染** —— 每张幻灯片渲染成 PNG 后完整描述，保留 shape-text 提取拿不到的空间关系（左右对比、箭头方向、四象限图表）
-- **任意规模可扩展** —— 大任务（>5 张图，或多文档批处理）时 agent 自动 spawn subagent，图片字节不进入主上下文。实测 8430 张幻灯片没爆上下文。
-
-如果要在 Claude Code 外做后台自动化（cron、脚本批处理），每个脚本支持 `--api-key` 参数走 standalone 模式。
+三个转换器默认使用 **agent 模式**：脚本负责确定性提取；Claude Code agent 用自带的 Vision 能力描述图片 —— **不需要 ANTHROPIC_API_KEY**。大批量时（>5 张图）agent 自动 spawn subagent，图片字节不进入主上下文。
 
 ### 安装
 
 ```bash
-npx skills add oCOZYo/doc-to-md-skills
+npx skills add oCOZYo/docs-to-wiki
 ```
 
-安装全部 3 个 skill 到当前项目的 `.agents/skills/`。加 `-g` 装到用户全局目录，或 `--skill pdf-to-md` 只装一个。
+安装全部四个 skill。加 `-g` 装到用户全局目录，`--skill pdf-to-md` 只装一个。
 
-### 配置
+### 快速开始
 
-#### 1. Python 环境
-
-```bash
-python3 -m venv ~/.venvs/doc-to-md
-source ~/.venvs/doc-to-md/bin/activate
-pip install pymupdf python-docx requests
-```
-
-#### 2. PaddleOCR（仅扫描 PDF 需要）
-
-原生文字 PDF 由 `pymupdf` 直接处理，不需要 OCR。只有扫描 PDF（图像形式、无文字层）会触发 OCR 路径。
-
-```bash
-export PADDLEOCR_TOKEN="your_token"
-export PADDLEOCR_API_URL="https://xxxx.aistudio-app.com/layout-parsing"
-```
-
-在 https://aistudio.baidu.com/paddleocr 注册并部署一个推理服务（有免费额度）。部署完成后从 AI Studio 控制台拿到端点 URL 和访问 token。
-
-#### 3. LibreOffice（仅 `pptx-to-md` 需要）
-
-```bash
-# macOS
-brew install --cask libreoffice
-
-# Debian/Ubuntu
-apt install libreoffice
-```
-
-用于在渲染每张幻灯片前将 PPTX 转为 PDF。
-
-#### 4.（可选）Standalone 模式
-
-如果要在 Claude Code 外跑（后台自动化）：
-
-```bash
-pip install anthropic
-# 给任何脚本加 --api-key：
-python pdf_to_md.py --input docs/ --output out/ --api-key sk-ant-...
-```
-
-### 使用
-
-在 Claude Code 里直接用自然语言触发：
-
+**单文档转换：**
 - *"把这个 PDF 转成 Markdown"* → `pdf-to-md`
 - *"提取这个 Word 文档"* → `docx-to-md`
 - *"把这些幻灯片转成笔记"* → `pptx-to-md`
 
-Agent 会先跑脚本做确定性提取，然后读取每个 `![](...)` 占位符，用 Vision 能力填入描述。
+**批量建知识库：**
+- *"把 ./corpus/ 里的文档建成 wiki"* → `docs-to-wiki` 编排完整流水线
 
-或直接调脚本：
+### Skills 列表
+
+| Skill | 输入格式 | 方法 |
+|-------|----------|------|
+| [docs-to-wiki](skills/docs-to-wiki/) | 混合文档目录 | 采集 → 转换 → OCR → 合并 → 合成 wiki |
+| [pdf-to-md](skills/pdf-to-md/) | PDF, JPG, PNG, BMP, TIFF, WEBP | `pymupdf` 直提 + PaddleOCR 兜底 |
+| [docx-to-md](skills/docx-to-md/) | DOCX | `python-docx` + 提取嵌入图 |
+| [pptx-to-md](skills/pptx-to-md/) | PPTX, PPSX | LibreOffice → 逐页 PNG |
+
+### 配置
 
 ```bash
-# PDF：自动判断文字/扫描，提取大图到磁盘
-python skills/pdf-to-md/scripts/pdf_to_md.py --input docs/ --output out/
+# Python 依赖
+pip install pymupdf python-docx requests pyyaml
 
-# DOCX：提取文字+表格，保存嵌入大图
-python skills/docx-to-md/scripts/docx_to_md.py --input report.docx --output out/
+# PaddleOCR —— 仅扫描 PDF 需要（有免费额度）
+export PADDLEOCR_TOKEN="your_token"
+export PADDLEOCR_API_URL="https://xxxx.aistudio-app.com/layout-parsing"
+# 注册：https://aistudio.baidu.com/paddleocr
 
-# PPTX：每张幻灯片渲染为 PNG
-python skills/pptx-to-md/scripts/pptx_to_md.py --input deck.pptx --output out/
+# LibreOffice —— 仅 pptx-to-md 需要
+# macOS:  brew install --cask libreoffice
+# Linux:  apt install libreoffice
 ```
 
-### Skill 列表
-
-| Skill | 输入格式 | 方法 | 可选依赖 |
-|-------|----------|------|----------|
-| [pdf-to-md](skills/pdf-to-md/) | PDF, JPG, PNG, BMP, TIFF, WEBP | `pymupdf` 直接提取 + PaddleOCR 兜底 | PaddleOCR（扫描 PDF）|
-| [docx-to-md](skills/docx-to-md/) | DOCX | `python-docx` + 抽取嵌入图 | — |
-| [pptx-to-md](skills/pptx-to-md/) | PPTX, PPSX | LibreOffice → PNG 逐张渲染 | LibreOffice |
+如果要在 Claude Code 外做后台自动化，给脚本加 `--api-key` 参数即可。
 
 ### License
 
