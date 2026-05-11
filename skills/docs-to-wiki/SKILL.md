@@ -57,7 +57,7 @@ WORKERS        parallel workers for LibreOffice and OCR (default: 4)
 ```
 
 Check for credentials:
-- `PADDLEOCR_TOKEN` / `PADDLEOCR_API_URL` — required for scanned PDF OCR only (free tier at https://aistudio.baidu.com/paddleocr)
+- `PADDLEOCR_TOKEN` / `PADDLEOCR_API_URL` — required for scanned PDF OCR and PPTX text-heavy slide routing (free tier at https://aistudio.baidu.com/paddleocr)
 
 No API key is needed for format conversion — the agent describes images using its built-in Vision capability.
 
@@ -112,8 +112,9 @@ python3 "${CLAUDE_SKILL_DIR}/../pptx-to-md/scripts/pptx_to_md.py" \
 ```
 
 In agent mode, each slide is rendered as a PNG and referenced via
-`![](...)` placeholders. Describe the slides using your Read tool or
-subagents — see `pptx-to-md/SKILL.md` Step 2.
+`![](...)` placeholders. The pptx-to-md skill uses intelligent routing:
+visual slides are described via Vision, text-heavy slides are first processed
+by PaddleOCR for precise text extraction. See `pptx-to-md/SKILL.md` Steps 2–4.
 
 ### Stage 2b (fallback) — PPTX/PPSX → PDF only
 
