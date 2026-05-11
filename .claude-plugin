@@ -1,0 +1,9 @@
+{
+  "name": "doc-to-md-skills",
+  "version": "1.0.0",
+  "skills": [
+    "skills/pdf-to-md",
+    "skills/docx-to-md",
+    "skills/pptx-to-md"
+  ]
+}

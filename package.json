@@ -1,0 +1,9 @@
+{
+  "name": "doc-to-md-skills",
+  "version": "1.0.0",
+  "description": "Claude Code skills: convert PDF, DOCX, PPTX to Markdown with Vision LLM",
+  "type": "module",
+  "keywords": ["claude-code", "skills", "pdf", "docx", "pptx", "markdown", "vision"],
+  "author": "oCOZYo",
+  "license": "MIT"
+}
