@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>pdf-to-md 处理流程</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: #f0f2f5;
+    color: #1a1a2e;
+    padding: 32px 20px 60px;
+  }
+  h1 {
+    text-align: center;
+    font-size: 22px;
+    font-weight: 700;
+    margin-bottom: 4px;
+    color: #1a1a2e;
+  }
+  .subtitle {
+    text-align: center;
+    font-size: 13px;
+    color: #666;
+    margin-bottom: 40px;
+  }
+  .pipeline {
+    max-width: 820px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+  }
+
+  /* ── Node cards ── */
+  .node {
+    width: 100%;
+    background: #fff;
+    border-radius: 12px;
+    padding: 16px 20px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.07);
+    cursor: pointer;
+    transition: box-shadow .15s, transform .1s;
+    position: relative;
+  }
+  .node:hover { box-shadow: 0 6px 20px rgba(0,0,0,.13); transform: translateY(-1px); }
+  .node-header { display: flex; align-items: center; gap: 12px; }
+  .badge {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 32px; height: 32px; border-radius: 50%;
+    font-size: 13px; font-weight: 700; flex-shrink: 0;
+    color: #fff;
+  }
+  .badge.blue   { background: #3b82f6; }
+  .badge.indigo { background: #6366f1; }
+  .badge.purple { background: #8b5cf6; }
+  .badge.orange { background: #f59e0b; }
+  .badge.green  { background: #10b981; }
+  .badge.gray   { background: #6b7280; }
+  .badge.teal   { background: #0d9488; }
+  .badge.pink   { background: #ec4899; }
+  .badge.red    { background: #ef4444; }
+
+  .node-title { font-size: 15px; font-weight: 600; flex: 1; }
+  .node-desc  { font-size: 13px; color: #555; margin-top: 2px; }
+  .tag {
+    font-size: 11px; padding: 2px 8px; border-radius: 20px;
+    font-weight: 600; white-space: nowrap;
+  }
+  .tag.lib  { background: #e0f2fe; color: #0369a1; }
+  .tag.api  { background: #fce7f3; color: #be185d; }
+  .tag.para { background: #fef3c7; color: #92400e; }
+  .tag.io   { background: #d1fae5; color: #065f46; }
+  .tag.opt  { background: #f3e8ff; color: #7c3aed; }
+  .tag.fast { background: #dcfce7; color: #15803d; }
+
+  /* expandable detail */
+  .node-detail {
+    display: none;
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid #f0f0f0;
+  }
+  .node.open .node-detail { display: block; }
+  .chevron {
+    font-size: 12px; color: #aaa; transition: transform .2s; margin-left: auto;
+  }
+  .node.open .chevron { transform: rotate(180deg); }
+
+  /* params table */
+  .params { width: 100%; border-collapse: collapse; font-size: 12.5px; margin-top: 8px; }
+  .params th {
+    background: #f8fafc; text-align: left; padding: 6px 10px;
+    font-weight: 600; color: #374151; border-bottom: 1px solid #e5e7eb;
+  }
+  .params td { padding: 6px 10px; border-bottom: 1px solid #f0f0f0; vertical-align: top; }
+  .params tr:last-child td { border-bottom: none; }
+  code {
+    background: #f1f5f9; padding: 1px 5px; border-radius: 4px;
+    font-size: 12px; font-family: "SF Mono", Menlo, monospace;
+  }
+  .default { color: #6366f1; font-weight: 600; }
+
+  /* arrows */
+  .arrow {
+    display: flex; flex-direction: column; align-items: center;
+    height: 36px; position: relative;
+  }
+  .arrow-line { width: 2px; background: #d1d5db; flex: 1; }
+  .arrow-head {
+    width: 0; height: 0;
+    border-left: 6px solid transparent;
+    border-right: 6px solid transparent;
+    border-top: 8px solid #d1d5db;
+  }
+  .arrow-label {
+    position: absolute; right: calc(50% + 12px);
+    top: 50%; transform: translateY(-50%);
+    font-size: 11px; color: #9ca3af; white-space: nowrap;
+  }
+
+  /* branch node (fork) */
+  .branch {
+    width: 100%;
+    display: flex; gap: 12px; align-items: flex-start;
+  }
+  .branch-side {
+    flex: 1; background: #fff; border-radius: 12px;
+    padding: 14px 16px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.07);
+    font-size: 13px;
+  }
+  .branch-side .bl { font-weight: 600; margin-bottom: 6px; font-size: 13px; }
+  .branch-side ul { padding-left: 18px; color: #555; line-height: 1.8; }
+  .branch-label {
+    text-align: center; font-size: 11px; font-weight: 600;
+    margin-bottom: 6px; color: #6b7280; letter-spacing: .5px; text-transform: uppercase;
+  }
+
+  /* error path */
+  .error-box {
+    background: #fff1f2; border: 1px dashed #fca5a5;
+    border-radius: 10px; padding: 10px 16px;
+    font-size: 12.5px; color: #b91c1c; margin-top: 10px;
+  }
+  .error-box strong { font-weight: 700; }
+
+  /* route decision strip */
+  .route-strip {
+    width: 100%; background: #fffbeb;
+    border: 1px solid #fde68a; border-radius: 12px;
+    padding: 14px 18px;
+  }
+  .route-header {
+    display: flex; align-items: center; gap: 8px;
+    font-weight: 700; font-size: 13.5px; margin-bottom: 10px;
+    color: #92400e;
+  }
+
+  /* mode decision strip */
+  .mode-strip {
+    width: 100%; background: #fff7ed;
+    border: 1px solid #fed7aa; border-radius: 12px;
+    padding: 14px 18px;
+  }
+  .mode-header {
+    display: flex; align-items: center; gap: 8px;
+    font-weight: 700; font-size: 13.5px; margin-bottom: 10px;
+    color: #c2410c;
+  }
+
+  /* agent vision strip */
+  .parallel-strip {
+    width: 100%; background: #f0f9ff;
+    border: 1px solid #bae6fd; border-radius: 12px;
+    padding: 14px 18px;
+  }
+  .para-header {
+    display: flex; align-items: center; gap: 8px;
+    font-weight: 600; font-size: 13.5px; margin-bottom: 10px;
+    color: #0369a1;
+  }
+
+  /* final output */
+  .output-box {
+    width: 100%; background: #f0fdf4;
+    border: 1px solid #86efac; border-radius: 12px;
+    padding: 16px 20px;
+  }
+  .output-box .out-title { font-weight: 700; font-size: 14px; color: #166534; margin-bottom: 8px; }
+  .out-struct { font-family: "SF Mono", Menlo, monospace; font-size: 12px; color: #374151; line-height: 1.9; }
+
+  /* loop */
+  .loop-label {
+    width: 100%; text-align: left;
+    font-size: 11px; font-weight: 700;
+    color: #6b7280; letter-spacing: .8px; text-transform: uppercase;
+    padding: 0 4px; margin-bottom: -4px;
+  }
+  .loop-wrap {
+    width: 100%; border: 2px dashed #cbd5e1;
+    border-radius: 16px; padding: 16px 16px 20px;
+    display: flex; flex-direction: column; align-items: center; gap: 0;
+  }
+
+  /* info callout */
+  .info-box {
+    background: #f0f9ff; border: 1px solid #bae6fd;
+    border-radius: 8px; padding: 10px 14px;
+    font-size: 12px; color: #0369a1; line-height: 1.7;
+  }
+  .warn-box {
+    background: #fff1f2; border: 1px dashed #fca5a5;
+    border-radius: 8px; padding: 8px 12px;
+    font-size: 12px; color: #b91c1c;
+  }
+  .ocr-box {
+    background: #f5f3ff; border: 1px solid #ddd6fe;
+    border-radius: 8px; padding: 10px 14px;
+    font-size: 12px; color: #5b21b6; line-height: 1.7;
+  }
+  .green-box {
+    background: #f0fdf4; border: 1px solid #86efac;
+    border-radius: 8px; padding: 10px 14px;
+    font-size: 12px; color: #166534; line-height: 1.7;
+  }
+</style>
+</head>
+<body>
+
+<h1>pdf-to-md 处理流程</h1>
+<p class="subtitle">点击各节点展开参数详情 · 脚本层（pdf_to_md.py + ocr_extract.py）+ Agent 判断层（SKILL.md）· 更新至当前版本</p>
+
+<div class="pipeline">
+
+  <!-- ── 0. Entry ── -->
+  <div class="node" onclick="toggle(this)">
+    <div class="node-header">
+      <span class="badge gray">▶</span>
+      <div>
+        <div class="node-title">入口 · 格式检测</div>
+        <div class="node-desc">自动识别 PDF 类型（原生文字 vs 扫描）及图片文件</div>
+      </div>
+      <span class="tag io">I/O</span>
+      <span class="chevron">▼</span>
+    </div>
+    <div class="node-detail">
+      <table class="params">
+        <tr><th>输入格式</th><th>路由</th><th>说明</th></tr>
+        <tr><td><code>PDF（原生文字）</code></td><td>pdf_to_md.py (pymupdf)</td><td>avg &gt;50 字符/页，秒级完成，无 API 消耗</td></tr>
+        <tr><td><code>PDF（扫描/图像）</code></td><td>ocr_extract.py (PaddleOCR)</td><td>avg ≤50 字符/页，自动跳过快速路径</td></tr>
+        <tr><td><code>图片文件</code></td><td>ocr_extract.py</td><td>JPG / PNG / BMP / TIFF / WEBP</td></tr>
+      </table>
+      <div style="margin-top:8px;" class="info-box">
+        <strong>Python 路径：</strong><code>~/.venvs/general/bin/python</code>（含 pymupdf）<br>
+        <code>PADDLEOCR_TOKEN</code> — 云端 OCR 认证 token（仅 Step 2 需要）<br>
+        <code>anthropic</code> 包 + <code>ANTHROPIC_API_KEY</code> — 仅 Standalone 模式需要
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow"><div class="arrow-line"></div><div class="arrow-head"></div></div>
+
+  <!-- ── Route decision ── -->
+  <div class="route-strip">
+    <div class="route-header">🔀 格式路由（按 PDF 平均字符数自动判断）</div>
+    <div style="display:flex;gap:10px;">
+      <div style="flex:1.2;background:#fff;border:2px solid #10b981;border-radius:8px;padding:10px 14px;font-size:12.5px;">
+        <div style="font-weight:700;color:#065f46;margin-bottom:5px;">⚡ 原生文字 PDF（avg &gt;50 ch/pg）</div>
+        <div style="color:#555;line-height:1.8;">
+          pymupdf 直接提取文字 + 嵌入图<br>
+          → <strong>Step 1</strong> 快速路径<br>
+          <span style="color:#15803d;">零 OCR API 消耗，秒级完成</span>
+        </div>
+      </div>
+      <div style="flex:1;background:#fff;border:1px solid #d1d5db;border-radius:8px;padding:10px 14px;font-size:12.5px;">
+        <div style="font-weight:700;color:#6b7280;margin-bottom:5px;">📷 扫描/图像 PDF（avg ≤50 ch/pg）</div>
+        <div style="color:#555;line-height:1.8;">
+          Step 1 自动跳过<br>
+          → <strong>Step 2</strong> PaddleOCR 云端
+        </div>
+      </div>
+      <div style="flex:1;background:#fff;border:1px solid #d1d5db;border-radius:8px;padding:10px 14px;font-size:12.5px;">
+        <div style="font-weight:700;color:#6b7280;margin-bottom:5px;">🖼 图片文件（JPG/PNG/…）</div>
+        <div style="color:#555;line-height:1.8;">
+          跳过 Step 1<br>
+          → 直接 <strong>Step 2</strong> OCR
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow"><div class="arrow-line"></div><div class="arrow-head"></div></div>
+
+  <!-- ── Mode decision ── -->
+  <div class="mode-strip">
+    <div class="mode-header">⚡ 模式选择（由 <code>--api-key</code> 是否传入决定）</div>
+    <div style="display:flex;gap:10px;">
+      <div style="flex:1.4;background:#fff;border:2px solid #10b981;border-radius:8px;padding:10px 14px;font-size:12.5px;">
+        <div style="font-weight:700;color:#065f46;margin-bottom:5px;">✅ Agent 模式（默认，零配置）</div>
+        <div style="color:#555;line-height:1.8;">
+          不传 <code>--api-key</code><br>
+          脚本提取文字 + 保存图片到磁盘<br>
+          由 Claude Code 内置 Vision 填写图片描述<br>
+          <strong>无需单独 Anthropic API Key</strong>
+        </div>
+      </div>
+      <div style="flex:1;background:#fff;border:1px solid #d1d5db;border-radius:8px;padding:10px 14px;font-size:12.5px;">
+        <div style="font-weight:700;color:#6b7280;margin-bottom:5px;">🔧 Standalone 模式</div>
+        <div style="color:#555;line-height:1.8;">
+          <strong>仅用户明确要求时</strong>传 <code>--api-key sk-ant-…</code><br>
+          脚本自行调用 Vision API 描述图片<br>
+          适合后台 / cron 无人值守场景
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow"><div class="arrow-line"></div><div class="arrow-head"></div></div>
+
+  <!-- ── Step 1: Fast extract ── -->
+  <div class="node" onclick="toggle(this)">
+    <div class="node-header">
+      <span class="badge green">1</span>
+      <div>
+        <div class="node-title">原生文字 PDF 快速提取 &nbsp;<small style="font-weight:400;color:#888">pymupdf · 秒级</small></div>
+        <div class="node-desc">pdf_to_md.py — 直接提取文字 + 嵌入大图，扫描 PDF 自动跳过</div>
+      </div>
+      <span class="tag fast">FAST</span>
+      <span class="tag lib">pymupdf</span>
+      <span class="chevron">▼</span>
+    </div>
+    <div class="node-detail">
+      <div class="info-box" style="margin-bottom:10px;">
+        <strong>只处理原生文字 PDF</strong>（avg &gt;50 ch/pg）；扫描 PDF 输出 <code>scanned (avg N ch/pg)</code> 后跳过，进入 Step 2
+      </div>
+      <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:12px 14px;font-family:'SF Mono',Menlo,monospace;font-size:11px;line-height:1.8;margin-bottom:10px;">
+        ~/.venvs/general/bin/python \<br>
+        &nbsp;&nbsp;~/.cc-switch/skills/pdf-to-md/scripts/pdf_to_md.py \<br>
+        &nbsp;&nbsp;--input "&lt;source_dir_or_file&gt;" \<br>
+        &nbsp;&nbsp;--output "&lt;output_dir&gt;"
+      </div>
+      <table class="params">
+        <tr><th>参数</th><th>默认值</th><th>说明</th></tr>
+        <tr><td><code>--large-image-kb</code></td><td class="default">30</td><td>嵌入大图超过此值（KB）才提取，过滤小图标/徽标</td></tr>
+        <tr><td><code>--no-images</code></td><td>—</td><td>纯文字模式，跳过所有图片，零 API 消耗</td></tr>
+        <tr><td><code>--max-images</code></td><td class="default">50</td><td>单文档图片数上限（费用保护）</td></tr>
+        <tr><td><code>--api-key</code></td><td>—</td><td>传入则启用 Standalone 模式，脚本自行调用 Vision</td></tr>
+        <tr><td><code>--model</code></td><td class="default">DOCS_TO_WIKI_MODEL /<br>claude-haiku-4-5-20251001</td><td>Standalone 模式 Vision 模型</td></tr>
+      </table>
+      <div style="margin-top:10px;" class="green-box">
+        <strong>输出：</strong><br>
+        · <code>&lt;output_dir&gt;/&lt;stem&gt;.md</code> — 文字 + <code>![](…)</code> 图片占位符<br>
+        · <code>&lt;output_dir&gt;/&lt;stem&gt;/imgs/img_NNN.{ext}</code> — 提取的嵌入图片（持久保存）
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow"><div class="arrow-line"></div><div class="arrow-head"></div></div>
+
+  <!-- ── Step 1b: Fill image descriptions ── -->
+  <div class="node" onclick="toggle(this)">
+    <div class="node-header">
+      <span class="badge blue">1b</span>
+      <div>
+        <div class="node-title">填写图片描述 &nbsp;<small style="font-weight:400;color:#888">Agent 模式 · 仅有嵌入图时执行</small></div>
+        <div class="node-desc">Read tool 读取图片 → Edit 替换 ![](...) 占位符为完整 Markdown 描述</div>
+      </div>
+      <span class="tag opt">可选</span>
+      <span class="tag api">Vision</span>
+      <span class="chevron">▼</span>
+    </div>
+    <div class="node-detail">
+      <div style="display:flex;gap:10px;margin-bottom:10px;">
+        <div style="flex:1;background:#f0fdf4;border:1px solid #86efac;border-radius:6px;padding:10px 12px;font-size:12px;">
+          <strong style="color:#166534;">≤ 5 张图片</strong><br>
+          直接用 Read tool 逐张读取<br>
+          Edit 替换占位符
+        </div>
+        <div style="flex:1;background:#f0f9ff;border:1px solid #bae6fd;border-radius:6px;padding:10px 12px;font-size:12px;">
+          <strong style="color:#0369a1;">&gt; 5 张 / 多文件批量</strong><br>
+          spawn subagents（每个 10–20 张）<br>
+          图片字节只进 subagent 上下文，主 agent 不膨胀
+        </div>
+      </div>
+      <div class="info-box">
+        <strong>描述内容：</strong>图片内容、流程图节点与箭头、图表数值与坐标轴、对比布局、完整表格<br>
+        <strong>无需独立 API Key</strong>：使用 Claude Code 内置 Vision 能力
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow"><div class="arrow-line"></div><div class="arrow-head"></div></div>
+
+  <!-- ── Step 2: OCR ── -->
+  <div class="node" onclick="toggle(this)">
+    <div class="node-header">
+      <span class="badge orange">2</span>
+      <div>
+        <div class="node-title">OCR 识别 &nbsp;<small style="font-weight:400;color:#888">PaddleOCR v2 异步 API</small></div>
+        <div class="node-desc">扫描 PDF + 图片文件；云端 Jobs API + multipart 上传；大文件自动拆分</div>
+      </div>
+      <span class="tag api">API</span>
+      <span class="tag para">异步</span>
+      <span class="chevron">▼</span>
+    </div>
+    <div class="node-detail">
+      <div class="ocr-box" style="margin-bottom:10px;">
+        <strong>接口注意：</strong><code>ocr_extract.py</code> 使用<strong>位置参数</strong>（无 <code>--input/--output</code> 标志）
+      </div>
+      <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:12px 14px;font-family:'SF Mono',Menlo,monospace;font-size:11px;line-height:1.8;margin-bottom:10px;">
+        export PADDLEOCR_TOKEN="your_token"<br>
+        python3 ~/.cc-switch/skills/pdf-to-md/scripts/ocr_extract.py \<br>
+        &nbsp;&nbsp;"&lt;source_dir&gt;" "&lt;output_dir&gt;"
+      </div>
+      <table class="params">
+        <tr><th>参数</th><th>默认</th><th>说明</th></tr>
+        <tr><td><code>--model</code></td><td class="default">PaddleOCR-VL-1.5</td><td>OCR 模型选择</td></tr>
+        <tr><td><code>--pages</code></td><td>—</td><td>页码范围，如 <code>"2,4-6"</code></td></tr>
+        <tr><td><code>--no-chart</code></td><td>—</td><td>禁用图表识别</td></tr>
+        <tr><td><code>--no-merge-tables</code></td><td>—</td><td>禁用跨页表格合并</td></tr>
+        <tr><td><code>--max-file-mb</code></td><td class="default">45</td><td>大文件自动拆分阈值（MB）</td></tr>
+      </table>
+      <table class="params" style="margin-top:10px;">
+        <tr><th>特性</th><th>说明</th></tr>
+        <tr><td>上传方式</td><td>multipart/form-data，本地文件 ≤ 50MB</td></tr>
+        <tr><td>大文件处理</td><td>≥ 45MB PDF 自动按页拆分为多个子文件并行提交</td></tr>
+        <tr><td>实时进度</td><td>控制台输出 <code>进度: 12/36 页</code></td></tr>
+        <tr><td>超时</td><td>单 job 30 分钟</td></tr>
+        <tr><td>默认开启</td><td>方向校正、去弯曲、图表识别、版面检测、跨页表格合并、标题层级</td></tr>
+      </table>
+      <div style="margin-top:10px;" class="green-box">
+        <strong>输出目录结构：</strong><br>
+        · <code>per_page/</code> — 逐页独立 MD（多页时生成）<br>
+        · <code>merged/</code> — 全文合并 MD，适合直接导入知识库<br>
+        · <code>pymupdf_raw/</code> — pymupdf 并行提取原文（仅 PDF 文件生成）
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow"><div class="arrow-line"></div><div class="arrow-head"></div></div>
+
+  <!-- ── Step 2b: Text fusion ── -->
+  <div class="node" onclick="toggle(this)">
+    <div class="node-header">
+      <span class="badge indigo">2b</span>
+      <div>
+        <div class="node-title">OCR + pymupdf 文字融合 &nbsp;<small style="font-weight:400;color:#888">Agent 智能校验 · 有 pymupdf_raw 时执行</small></div>
+        <div class="node-desc">两路文字互补：pymupdf 零误差 + OCR 覆盖图片区域，agent 逐页对比融合</div>
+      </div>
+      <span class="tag opt">可选</span>
+      <span class="tag lib">Agent</span>
+      <span class="chevron">▼</span>
+    </div>
+    <div class="node-detail">
+      <div class="ocr-box" style="margin-bottom:10px;">
+        <strong>核心价值：</strong>pymupdf 文字零误差但无图片内容，OCR 覆盖全文但有识别错误。两者互补，agent 融合后字准最高、覆盖最全。
+      </div>
+      <table class="params">
+        <tr><th>页面情况</th><th>融合策略</th></tr>
+        <tr><td>pymupdf 文字丰富（&gt;50 字符）</td><td>以 pymupdf 文字为主，OCR 文字为辅交叉校验</td></tr>
+        <tr><td>pymupdf 文字稀疏/为空</td><td>以 OCR 为主（扫描件/图片页）</td></tr>
+      </table>
+      <div style="margin-top:10px;" class="info-box">
+        <strong>流程：</strong>读取 <code>merged/&lt;stem&gt;.md</code>（OCR）+ <code>pymupdf_raw/&lt;stem&gt;.md</code>（pymupdf）→ 逐页对比 → Edit 写入融合结果到 <code>merged/</code>
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow"><div class="arrow-line"></div><div class="arrow-head"></div></div>
+
+  <!-- ── Step 3: Optional review ── -->
+  <div class="node" onclick="toggle(this)">
+    <div class="node-header">
+      <span class="badge teal">3</span>
+      <div>
+        <div class="node-title">审查与调整 &nbsp;<small style="font-weight:400;color:#888">按需 · 用户要求时执行</small></div>
+        <div class="node-desc">修正识别错误、统一术语、优化标题层级</div>
+      </div>
+      <span class="tag opt">可选</span>
+      <span class="chevron">▼</span>
+    </div>
+    <div class="node-detail">
+      <div class="info-box" style="margin-bottom:10px;">
+        先读取 <code>references/optimization-prompt.md</code> 中的处理规范，再用 Edit 工具针对性修改
+      </div>
+      <table class="params">
+        <tr><th>操作类型</th><th>说明</th></tr>
+        <tr><td>修正识别错误</td><td>标注 <code>[存疑]</code> 或 <code>[OCR修正]</code></td></tr>
+        <tr><td>清理噪声</td><td>页眉页脚、冗余空格、乱码</td></tr>
+        <tr><td>格式优化</td><td>标题层级、引用块、列表、表格</td></tr>
+        <tr><td>术语统一</td><td>按 optimization-prompt.md 规范批量替换</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="arrow">
+    <div class="arrow-line"></div>
+    <div class="arrow-head"></div>
+    <div class="arrow-label">完成</div>
+  </div>
+
+  <!-- ── Standalone mode info ── -->
+  <div class="mode-strip">
+    <div class="mode-header">🔧 Standalone 模式（后台/cron 无人值守）</div>
+    <div style="background:#fff;border:1px solid #d1d5db;border-radius:8px;padding:12px 14px;font-family:'SF Mono',Menlo,monospace;font-size:11px;line-height:1.9;color:#374151;margin-bottom:10px;">
+      ~/.venvs/general/bin/python \<br>
+      &nbsp;&nbsp;~/.cc-switch/skills/pdf-to-md/scripts/pdf_to_md.py \<br>
+      &nbsp;&nbsp;--input file.pdf --output out/ \<br>
+      &nbsp;&nbsp;<strong>--api-key sk-ant-...</strong> --model claude-haiku-4-5-20251001
+    </div>
+    <div style="font-size:12px;color:#555;line-height:1.7;">
+      也可用环境变量统一覆盖模型：<code>export DOCS_TO_WIKI_MODEL=claude-sonnet-4-6</code>
+    </div>
+  </div>
+
+  <div class="arrow"><div class="arrow-line"></div><div class="arrow-head"></div></div>
+
+  <!-- ── Final output ── -->
+  <div class="output-box">
+    <div class="out-title">✅ 最终输出结构</div>
+    <div style="display:flex;gap:16px;flex-wrap:wrap;">
+      <div style="flex:1;min-width:240px;">
+        <div style="font-size:12px;font-weight:700;color:#166534;margin-bottom:6px;">原生文字 PDF 路径</div>
+        <div class="out-struct">
+          output_dir/<br>
+          &nbsp;&nbsp;├── 文件A.md &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;← 文字 + 图片描述<br>
+          &nbsp;&nbsp;└── 文件A/<br>
+          &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└── imgs/<br>
+          &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├── img_001.png &nbsp;← 提取的嵌入图<br>
+          &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└── …
+        </div>
+      </div>
+      <div style="flex:1;min-width:240px;">
+        <div style="font-size:12px;font-weight:700;color:#166534;margin-bottom:6px;">扫描 PDF / OCR 路径</div>
+        <div class="out-struct">
+          output_dir/<br>
+          &nbsp;&nbsp;└── 文件A/<br>
+          &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├── per_page/ &nbsp;&nbsp;&nbsp;&nbsp;← 逐页 MD<br>
+          &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├── merged/ &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;← 合并 MD ⭐<br>
+          &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└── pymupdf_raw/ ← pymupdf 原文
+        </div>
+      </div>
+    </div>
+    <div style="margin-top:12px;font-size:12px;color:#374151;line-height:1.9;">
+      · 原生文字 PDF：无 OCR API 消耗，秒级完成<br>
+      · 扫描 PDF：需 <code>PADDLEOCR_TOKEN</code>，实时进度反馈，单 job 最长 30 分钟<br>
+      · 图片文件（<code>&lt;stem&gt;/imgs/</code>）持久保存，agent 可在任意时间点 Read<br>
+      · 大文件（≥45MB PDF）自动拆分多个子文件并行提交，结果按顺序合并<br>
+      · Token 含个人凭证，始终用环境变量传入，不要写在命令行
+    </div>
+  </div>
+
+</div><!-- end pipeline -->
+
+<script>
+function toggle(el) {
+  el.classList.toggle('open');
+}
+</script>
+</body>
+</html>

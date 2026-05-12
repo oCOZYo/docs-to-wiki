@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>docs-to-wiki 处理流程</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: #f0f2f5;
+    color: #1a1a2e;
+    padding: 32px 20px 60px;
+  }
+  h1 {
+    text-align: center;
+    font-size: 22px;
+    font-weight: 700;
+    margin-bottom: 4px;
+    color: #1a1a2e;
+  }
+  .subtitle {
+    text-align: center;
+    font-size: 13px;
+    color: #666;
+    margin-bottom: 40px;
+  }
+  .pipeline {
+    max-width: 860px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+  }
+
+  .node {
+    width: 100%;
+    background: #fff;
+    border-radius: 12px;
+    padding: 16px 20px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.07);
+    cursor: pointer;
+    transition: box-shadow .15s, transform .1s;
+    position: relative;
+  }
+  .node:hover { box-shadow: 0 6px 20px rgba(0,0,0,.13); transform: translateY(-1px); }
+  .node-header { display: flex; align-items: center; gap: 12px; }
+  .badge {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 32px; height: 32px; border-radius: 50%;
+    font-size: 13px; font-weight: 700; flex-shrink: 0;
+    color: #fff;
+  }
+  .badge.blue   { background: #3b82f6; }
+  .badge.indigo { background: #6366f1; }
+  .badge.purple { background: #8b5cf6; }
+  .badge.orange { background: #f59e0b; }
+  .badge.green  { background: #10b981; }
+  .badge.gray   { background: #6b7280; }
+  .badge.teal   { background: #0d9488; }
+  .badge.pink   { background: #ec4899; }
+  .badge.amber  { background: #d97706; }
+  .badge.rose   { background: #e11d48; }
+  .badge.sky    { background: #0284c7; }
+
+  .node-title { font-size: 15px; font-weight: 600; flex: 1; }
+  .node-desc  { font-size: 13px; color: #555; margin-top: 2px; }
+  .tag {
+    font-size: 11px; padding: 2px 8px; border-radius: 20px;
+    font-weight: 600; white-space: nowrap;
+  }
+  .tag.lib  { background: #e0f2fe; color: #0369a1; }
+  .tag.api  { background: #fce7f3; color: #be185d; }
+  .tag.para { background: #fef3c7; color: #92400e; }
+  .tag.io   { background: #d1fae5; color: #065f46; }
+  .tag.opt  { background: #f3e8ff; color: #7c3aed; }
+  .tag.del  { background: #e0f2fe; color: #0369a1; }
+
+  .node-detail {
+    display: none;
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid #f0f0f0;
+  }
+  .node.open .node-detail { display: block; }
+  .chevron {
+    font-size: 12px; color: #aaa; transition: transform .2s; margin-left: auto;
+  }
+  .node.open .chevron { transform: rotate(180deg); }
+
+  .params { width: 100%; border-collapse: collapse; font-size: 12.5px; margin-top: 8px; }
+  .params th {
+    background: #f8fafc; text-align: left; padding: 6px 10px;
+    font-weight: 600; color: #374151; border-bottom: 1px solid #e5e7eb;
+  }
+  .params td { padding: 6px 10px; border-bottom: 1px solid #f0f0f0; vertical-align: top; }
+  .params tr:last-child td { border-bottom: none; }
+  code {
+    background: #f1f5f9; padding: 1px 5px; border-radius: 4px;
+    font-size: 12px; font-family: "SF Mono", Menlo, monospace;
+  }
+  .default { color: #6366f1; font-weight: 600; }
+
+  .arrow {
+    display: flex; flex-direction: column; align-items: center;
+    height: 36px; position: relative;
+  }
+  .arrow-line { width: 2px; background: #d1d5db; flex: 1; }
+  .arrow-head {
+    width: 0; height: 0;
+    border-left: 6px solid transparent;
+    border-right: 6px solid transparent;
+    border-top: 8px solid #d1d5db;
+  }
+  .arrow-label {
+    position: absolute; right: calc(50% + 12px);
+    top: 50%; transform: translateY(-50%);
+    font-size: 11px; color: #9ca3af; white-space: nowrap;
+  }
+
+  /* parallel conversion block */
+  .parallel-block {
+    width: 100%;
+    display: flex; gap: 10px; align-items: flex-start;
+  }
+  .parallel-col {
+    flex: 1; background: #fff; border-radius: 12px;
+    padding: 14px 16px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.07);
+    font-size: 13px;
+  }
+  .parallel-col .col-title {
+    font-weight: 700; margin-bottom: 8px; font-size: 13px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .parallel-col ul { padding-left: 16px; color: #555; line-height: 1.8; font-size: 12.5px; }
+
+  .info-box {
+    background: #f0f9ff; border: 1px solid #bae6fd;
+    border-radius: 8px; padding: 10px 14px;
+    font-size: 12px; color: #0369a1; line-height: 1.7;
+  }
+  .warn-box {
+    background: #fff1f2; border: 1px dashed #fca5a5;
+    border-radius: 8px; padding: 8px 12px;
+    font-size: 12px; color: #b91c1c;
+  }
+  .green-box {
+    background: #f0fdf4; border: 1px solid #86efac;
+    border-radius: 8px; padding: 10px 14px;
+    font-size: 12px; color: #166534; line-height: 1.7;
+  }
+  .ocr-box {
+    background: #f5f3ff; border: 1px solid #ddd6fe;
+    border-radius: 8px; padding: 10px 14px;
+    font-size: 12px; color: #5b21b6; line-height: 1.7;
+  }
+
+  /* stage header banner */
+  .stage-banner {
+    width: 100%; background: #1e293b;
+    border-radius: 12px; padding: 12px 18px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .stage-num {
+    font-size: 11px; font-weight: 800; color: #94a3b8;
+    letter-spacing: 1px; text-transform: uppercase; white-space: nowrap;
+  }
+  .stage-title {
+    font-size: 14px; font-weight: 700; color: #fff;
+  }
+  .stage-time {
+    margin-left: auto; font-size: 11px; color: #64748b; white-space: nowrap;
+  }
+
+  .output-box {
+    width: 100%; background: #f0fdf4;
+    border: 1px solid #86efac; border-radius: 12px;
+    padding: 16px 20px;
+  }
+  .output-box .out-title { font-weight: 700; font-size: 14px; color: #166534; margin-bottom: 8px; }
+  .out-struct { font-family: "SF Mono", Menlo, monospace; font-size: 12px; color: #374151; line-height: 1.9; }
+
+  /* overview table */
+  .overview-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  .overview-table th {
+    background: #1e293b; color: #94a3b8; padding: 8px 12px;
+    text-align: left; font-weight: 600;
+  }
+  .overview-table td { padding: 7px 12px; border-bottom: 1px solid #e5e7eb; vertical-align: middle; }
+  .overview-table tr:hover td { background: #f8fafc; }
+
+  /* atomic skill reference boxes */
+  .atomic-ref {
+    width: 100%; background: #eff6ff;
+    border: 1px solid #bfdbfe; border-radius: 10px;
+    padding: 12px 16px;
+  }
+  .atomic-ref .ar-title {
+    font-size: 12px; font-weight: 700; color: #1d4ed8; margin-bottom: 6px;
+  }
+</style>
+</head>
+<body>
+
+<h1>docs-to-wiki 处理流程</h1>
+<p class="subtitle">点击各节点展开命令详情 · 编排层（docs-to-wiki）调用原子 Skill（pdf-to-md / docx-to-md / pptx-to-md）· 更新至当前版本</p>
+
+<div class="pipeline">
+
+  <!-- ── Architecture Overview ── -->
+  <div style="width:100%;background:#fff;border-radius:12px;padding:16px 20px;box-shadow:0 2px 8px rgba(0,0,0,.07);margin-bottom:0;">
+    <div style="font-weight:700;font-size:14px;margin-bottom:12px;color:#1e293b;">🏗 架构总览（编排层 + 原子 Skill）</div>
+    <table class="overview-table">
+      <tr>
+        <th>阶段</th><th>脚本 / Skill</th><th>处理对象</th><th>预计时间</th>
+      </tr>
+      <tr><td style="color:#6366f1;font-weight:600;">Stage 0</td><td>— 确认参数</td><td>SOURCE_DIR / COMPANY_NAME / WIKI_DIR</td><td>分钟</td></tr>
+      <tr><td style="color:#6366f1;font-weight:600;">Stage 1</td><td><code>01_collect_docs.py</code></td><td>PPTX/PDF/DOCX 扫描归集</td><td>秒</td></tr>
+      <tr><td style="color:#0d9488;font-weight:600;">Stage 2a</td><td><code>docx-to-md</code> skill</td><td>DOCX → MD</td><td>~2s/doc + Vision</td></tr>
+      <tr><td style="color:#0d9488;font-weight:600;">Stage 2b</td><td><code>pptx-to-md</code> skill</td><td>PPTX → MD (PNG + Vision)</td><td>~10s/file</td></tr>
+      <tr><td style="color:#0d9488;font-weight:600;">Stage 2b†</td><td><code>02_convert_to_pdf.py</code></td><td>PPTX → PDF fallback（无 Vision）</td><td>~5min/100文件</td></tr>
+      <tr><td style="color:#0d9488;font-weight:600;">Stage 2c</td><td><code>pdf-to-md</code> skill (Step 1)</td><td>原生文字 PDF → MD</td><td>~1s/页，即时</td></tr>
+      <tr><td style="color:#f59e0b;font-weight:600;">Stage 3</td><td><code>03_run_ocr.py</code></td><td>扫描 PDF OCR（并行批处理）</td><td>~3h/400文件</td></tr>
+      <tr><td style="color:#f59e0b;font-weight:600;">Stage 3†</td><td><code>04_run_ocr_remaining.py</code></td><td>OCR 重试（失败/超时）</td><td>不定</td></tr>
+      <tr><td style="color:#6366f1;font-weight:600;">Stage 4</td><td><code>05_merge_ocr.py</code></td><td>OCR 输出合并</td><td>秒</td></tr>
+      <tr><td style="color:#10b981;font-weight:600;">Stage 5</td><td>inline（Agent 编写）</td><td>Wiki 页面合成</td><td>~20min</td></tr>
+      <tr><td style="color:#6366f1;font-weight:600;">Stage 6</td><td><code>06_rebuild_source_links.py</code></td><td>源文件 wikilink 重建</td><td>秒</td></tr>
+      <tr><td style="color:#6366f1;font-weight:600;">Stage 7</td><td>inline（Agent 写 report）</td><td>Pipeline 报告</td><td>分钟</td></tr>
+    </table>
+  </div>
+
+  <div class="arrow"><div class="arrow-line"></div><div class="arrow-head"></div></div>
+
+  <!-- ── Stage 0: Gather parameters ── -->
+  <div class="node" onclick="toggle(this)">
+    <div class="node-header">
+      <span class="badge gray">0</span>
+      <div>
+        <div class="node-title">Stage 0 · 确认参数与凭证</div>
+        <div class="node-desc">确认 SOURCE_DIR、COMPANY_NAME、WIKI_DIR、WORKERS；检查 API Key</div>
+      </div>
+      <span class="tag io">交互</span>
+      <span class="chevron">▼</span>
+    </div>
+    <div class="node-detail">
+      <table class="params">
+        <tr><th>参数</th><th>说明</th></tr>
+        <tr><td><code>SOURCE_DIR</code></td><td>包含所有文档的根目录</td></tr>
+        <tr><td><code>COMPANY_NAME</code></td><td>Wiki 显示名称（如"数美科技"）</td></tr>
+        <tr><td><code>WIKI_DIR</code></td><td>Wiki 输出目录（默认 <code>SOURCE_DIR/../&lt;slug&gt;_wiki</code>）</td></tr>
+        <tr><td><code>WORKERS</code></td><td>并行 worker 数，默认 4（用于 LibreOffice + OCR）</td></tr>
+      </table>
+      <div style="margin-top:10px;" class="info-box">
+        <strong>凭证检查：</strong><br>
+        · <code>ANTHROPIC_API_KEY</code> — Vision DOCX/PPTX 提取必需<br>
+        · <code>PADDLEOCR_TOKEN</code> / <code>PADDLEOCR_API_URL</code> — 扫描 PDF OCR 必需<br>
+        · <code>DOCS_TO_WIKI_MODEL</code>（可选）— 统一覆盖 Vision 模型；未设置时询问用户
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow"><div class="arrow-line"></div><div class="arrow-head"></div></div>
+
+  <!-- ── Stage 1: Collect ── -->
+  <div class="node" onclick="toggle(this)">
+    <div class="node-header">
+      <span class="badge indigo">1</span>
+      <div>
+        <div class="node-title">Stage 1 · 收集文档</div>
+        <div class="node-desc">01_collect_docs.py — 扫描并归集 PPTX/PDF/DOCX，生成 staging 目录</div>
+      </div>
+      <span class="tag io">I/O</span>
+      <span class="chevron">▼</span>
+    </div>
+    <div class="node-detail">
+      <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:12px 14px;font-family:'SF Mono',Menlo,monospace;font-size:11px;line-height:1.8;margin-bottom:10px;">
+        python ~/.claude/skills/docs-to-wiki/scripts/01_collect_docs.py \<br>
+        &nbsp;&nbsp;--source SOURCE_DIR \<br>
+        &nbsp;&nbsp;--output SOURCE_DIR/../&lt;slug&gt;_staging
+      </div>
+      <table class="params">
+        <tr><th>收集</th><th>跳过</th></tr>
+        <tr>
+          <td>PPTX、PPSX、PDF、DOCX</td>
+          <td>Excel/CSV、隐藏文件、临时文件（<code>~$</code> 前缀）、wiki/OCR 输出目录本身</td>
+        </tr>
+      </table>
+      <div style="margin-top:8px;" class="info-box">
+        输出：扁平 staging 目录，文件名中路径分隔符替换为 <code>__</code>（sanitized filenames）<br>
+        报告：收集总数 + 格式分类统计
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow"><div class="arrow-line"></div><div class="arrow-head"></div></div>
+
+  <!-- ── Stage 2: Parallel conversion ── -->
+  <div class="stage-banner">
+    <span class="stage-num">Stage 2</span>
+    <span class="stage-title">格式转换（2a / 2b / 2c 可并行）</span>
+    <span class="stage-time">委托三个原子 Skill</span>
+  </div>
+
+  <div class="arrow" style="height:16px;"><div class="arrow-line"></div></div>
+
+  <div class="parallel-block">
+    <!-- 2a: DOCX -->
+    <div class="parallel-col" onclick="toggle2(this)" style="cursor:pointer;border:2px solid #e0f2fe;">
+      <div class="col-title">
+        <span class="badge teal" style="width:26px;height:26px;font-size:11px;flex-shrink:0;">2a</span>
+        <span style="color:#0d9488;">DOCX → MD</span>
+      </div>
+      <div style="font-size:12px;color:#555;line-height:1.8;">委托 <strong>docx-to-md</strong> skill<br>python-docx 无损提取 + Vision 图片描述</div>
+      <div class="detail2" style="display:none;margin-top:10px;border-top:1px solid #f0f0f0;padding-top:10px;">
+        <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:10px 12px;font-family:'SF Mono',Menlo,monospace;font-size:11px;line-height:1.8;margin-bottom:8px;">
+          export ANTHROPIC_API_KEY="..."<br>
+          ~/.venvs/paddleocr/bin/python \<br>
+          &nbsp;&nbsp;~/.cc-switch/skills/docx-to-md/scripts/docx_to_md.py \<br>
+          &nbsp;&nbsp;--input SOURCE_DIR \<br>
+          &nbsp;&nbsp;--output SOURCE_DIR/../&lt;slug&gt;_sources_tmp/ \<br>
+          &nbsp;&nbsp;--large-image-kb 30 \<br>
+          &nbsp;&nbsp;--model claude-haiku-4-5-20251001
+        </div>
+        <div class="info-box" style="font-size:11.5px;">运行后，将每个 .md 移入 per-doc 目录：<br><code>&lt;slug&gt;_sources/&lt;docname&gt;/&lt;docname&gt;.md</code></div>
+      </div>
+    </div>
+
+    <!-- 2b: PPTX -->
+    <div class="parallel-col" onclick="toggle2(this)" style="cursor:pointer;border:2px solid #fce7f3;">
+      <div class="col-title">
+        <span class="badge pink" style="width:26px;height:26px;font-size:11px;flex-shrink:0;">2b</span>
+        <span style="color:#be185d;">PPTX → MD</span>
+      </div>
+      <div style="font-size:12px;color:#555;line-height:1.8;">委托 <strong>pptx-to-md</strong> skill<br>PNG 渲染 + OCR 辅助 + Vision 描述</div>
+      <div class="detail2" style="display:none;margin-top:10px;border-top:1px solid #f0f0f0;padding-top:10px;">
+        <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:10px 12px;font-family:'SF Mono',Menlo,monospace;font-size:11px;line-height:1.8;margin-bottom:8px;">
+          export ANTHROPIC_API_KEY="..."<br>
+          ~/.venvs/general/bin/python \<br>
+          &nbsp;&nbsp;~/.cc-switch/skills/pptx-to-md/scripts/pptx_to_md.py \<br>
+          &nbsp;&nbsp;--input SOURCE_DIR \<br>
+          &nbsp;&nbsp;--output SOURCE_DIR/../&lt;slug&gt;_sources_tmp/ \<br>
+          &nbsp;&nbsp;--dpi 150 --concurrent 5 \<br>
+          &nbsp;&nbsp;--model claude-haiku-4-5-20251001
+        </div>
+        <div class="warn-box" style="font-size:11.5px;">
+          <strong>Fallback（无 Vision / 控制成本）：</strong><br>
+          <code>02_convert_to_pdf.py --source SOURCE_DIR --output &lt;slug&gt;_pdf --workers WORKERS</code><br>
+          仅转 PDF，交给 Stage 3 OCR
+        </div>
+      </div>
+    </div>
+
+    <!-- 2c: PDF -->
+    <div class="parallel-col" onclick="toggle2(this)" style="cursor:pointer;border:2px solid #dcfce7;">
+      <div class="col-title">
+        <span class="badge green" style="width:26px;height:26px;font-size:11px;flex-shrink:0;">2c</span>
+        <span style="color:#166534;">PDF → MD</span>
+      </div>
+      <div style="font-size:12px;color:#555;line-height:1.8;">委托 <strong>pdf-to-md</strong> skill (Step 1)<br>原生文字 PDF，扫描 PDF 跳过留 Stage 3</div>
+      <div class="detail2" style="display:none;margin-top:10px;border-top:1px solid #f0f0f0;padding-top:10px;">
+        <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:10px 12px;font-family:'SF Mono',Menlo,monospace;font-size:11px;line-height:1.8;margin-bottom:8px;">
+          ~/.venvs/paddleocr/bin/python \<br>
+          &nbsp;&nbsp;~/.cc-switch/skills/pdf-to-md/scripts/pdf_to_md.py \<br>
+          &nbsp;&nbsp;--input SOURCE_DIR \<br>
+          &nbsp;&nbsp;--output SOURCE_DIR/../&lt;slug&gt;_sources_tmp/ \<br>
+          &nbsp;&nbsp;--large-image-kb 30
+        </div>
+        <div class="info-box" style="font-size:11.5px;">原生 PDF avg &gt;50 ch/pg → 直接生成 .md<br>扫描 PDF avg ≤50 ch/pg → 跳过，进 Stage 3</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow"><div class="arrow-line"></div><div class="arrow-head"></div></div>
+
+  <!-- ── Stage 3: OCR ── -->
+  <div class="node" onclick="toggle(this)">
+    <div class="node-header">
+      <span class="badge orange">3</span>
+      <div>
+        <div class="node-title">Stage 3 · 扫描 PDF OCR（并行批处理）</div>
+        <div class="node-desc">03_run_ocr.py — 并行调用 pdf-to-md Step 2（ocr_extract.py），批量处理失败自动重试</div>
+      </div>
+      <span class="tag api">PaddleOCR</span>
+      <span class="tag para">并行</span>
+      <span class="chevron">▼</span>
+    </div>
+    <div class="node-detail">
+      <div class="ocr-box" style="margin-bottom:10px;">
+        <strong>原子 Skill 扩展：</strong><code>ocr_extract.py</code> 本身顺序执行，docs-to-wiki 在外层加并行批处理 wrapper，大幅提速大规模语料
+      </div>
+      <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:12px 14px;font-family:'SF Mono',Menlo,monospace;font-size:11px;line-height:1.8;margin-bottom:10px;">
+        export PADDLEOCR_TOKEN="..."<br>
+        export PADDLEOCR_API_URL="..."<br>
+        python ~/.claude/skills/docs-to-wiki/scripts/03_run_ocr.py \<br>
+        &nbsp;&nbsp;--pdf-dir SOURCE_DIR/../&lt;slug&gt;_pdf \<br>
+        &nbsp;&nbsp;--original-pdf-dir SOURCE_DIR \<br>
+        &nbsp;&nbsp;--output SOURCE_DIR/../&lt;slug&gt;_ocr \<br>
+        &nbsp;&nbsp;--workers WORKERS --batch-size 25
+      </div>
+      <div style="margin-bottom:10px;" class="warn-box">
+        <strong>OCR 重试（Stage 3†）：</strong>网络中断后，重复运行以下命令直到 remaining count 稳定：<br>
+        <code style="font-size:11px;">python ... 04_run_ocr_remaining.py --pdf-dir ... --ocr-output ... --workers WORKERS --batch-size 25</code>
+      </div>
+      <table class="params">
+        <tr><th>特性</th><th>说明</th></tr>
+        <tr><td>内部调用</td><td><code>~/.cc-switch/skills/pdf-to-md/scripts/ocr_extract.py</code>（并行批次）</td></tr>
+        <tr><td>去重</td><td>按文件名 stem 去重，避免重复 OCR</td></tr>
+        <tr><td>幂等性</td><td>可安全多次运行，retry 脚本检查已有输出</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="arrow"><div class="arrow-line"></div><div class="arrow-head"></div></div>
+
+  <!-- ── Stage 4: Merge ── -->
+  <div class="node" onclick="toggle(this)">
+    <div class="node-header">
+      <span class="badge blue">4</span>
+      <div>
+        <div class="node-title">Stage 4 · 合并 OCR 输出</div>
+        <div class="node-desc">05_merge_ocr.py — 整合 batch/remaining 子目录 + Stages 2a/2b/2c 产出，生成统一 sources 结构</div>
+      </div>
+      <span class="tag io">I/O</span>
+      <span class="chevron">▼</span>
+    </div>
+    <div class="node-detail">
+      <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:12px 14px;font-family:'SF Mono',Menlo,monospace;font-size:11px;line-height:1.8;margin-bottom:10px;">
+        python ~/.claude/skills/docs-to-wiki/scripts/05_merge_ocr.py \<br>
+        &nbsp;&nbsp;--ocr-dir SOURCE_DIR/../&lt;slug&gt;_ocr \<br>
+        &nbsp;&nbsp;--output SOURCE_DIR/../&lt;slug&gt;_sources
+      </div>
+      <div class="green-box">
+        <strong>输出目录结构：</strong><br>
+        <code>&lt;slug&gt;_sources/</code><br>
+        <span style="font-family:monospace;font-size:11px;">
+          &nbsp;&nbsp;&lt;docname&gt;/<br>
+          &nbsp;&nbsp;&nbsp;&nbsp;&lt;docname&gt;.md &nbsp;&nbsp;&nbsp;&nbsp;← 最终 MD 文件<br>
+          &nbsp;&nbsp;&nbsp;&nbsp;imgs/ &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;← 提取图片（仅 OCR 路径）
+        </span>
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow"><div class="arrow-line"></div><div class="arrow-head"></div></div>
+
+  <!-- ── Stage 5: Build Wiki ── -->
+  <div class="node" onclick="toggle(this)">
+    <div class="node-header">
+      <span class="badge green">5</span>
+      <div>
+        <div class="node-title">Stage 5 · 构建 Wiki（LLM 合成）</div>
+        <div class="node-desc">核心合成阶段：分类设计 → 源文件映射 → 并行 subagent 写 Wiki 页</div>
+      </div>
+      <span class="tag para">并行</span>
+      <span class="tag lib">Agent</span>
+      <span class="chevron">▼</span>
+    </div>
+    <div class="node-detail">
+      <div class="info-box" style="margin-bottom:10px;">
+        开始前，先读 <code>references/wiki-build-guide.md</code> 获取完整指引
+      </div>
+      <table class="params">
+        <tr><th>步骤</th><th>操作</th></tr>
+        <tr><td>① 采样</td><td>随机读取约 20 个源文档名，理解领域</td></tr>
+        <tr><td>② 分类设计</td><td>设计 Wiki 类目，编写 <code>classify()</code> 函数</td></tr>
+        <tr><td>③ 源文件映射</td><td>构建 source map（文档 → 类目映射）</td></tr>
+        <tr><td>④ 初始化结构</td><td>创建 CLAUDE.md、index.md、log.md</td></tr>
+        <tr><td>⑤ 并行写页</td><td>每类目一个 subagent，<strong>读完源文件立即写页面</strong>（不批量读后再写）</td></tr>
+        <tr><td>⑥ 移入 sources</td><td>将 <code>&lt;slug&gt;_sources/</code> 移入 <code>wiki/sources/</code></td></tr>
+        <tr><td>⑦ 重建链接</td><td>运行 Stage 6 脚本</td></tr>
+      </table>
+      <div style="margin-top:10px;" class="warn-box">
+        <strong>重要约束：</strong>Wiki 页面只含文字合成，禁止添加批量图片 Gallery——读者通过 sources/ 链接查看带图的原文
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow"><div class="arrow-line"></div><div class="arrow-head"></div></div>
+
+  <!-- ── Stage 6: Post-process ── -->
+  <div class="node" onclick="toggle(this)">
+    <div class="node-header">
+      <span class="badge teal">6</span>
+      <div>
+        <div class="node-title">Stage 6 · 重建 Wikilink</div>
+        <div class="node-desc">06_rebuild_source_links.py — 将纯文字来源替换为 [[sources/xxx|display]] wikilink</div>
+      </div>
+      <span class="tag lib">pyyaml</span>
+      <span class="chevron">▼</span>
+    </div>
+    <div class="node-detail">
+      <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:12px 14px;font-family:'SF Mono',Menlo,monospace;font-size:11px;line-height:1.8;margin-bottom:10px;">
+        ~/.venvs/paddleocr/bin/python \<br>
+        &nbsp;&nbsp;~/.claude/skills/docs-to-wiki/scripts/06_rebuild_source_links.py \<br>
+        &nbsp;&nbsp;--wiki-dir WIKI_DIR
+      </div>
+      <div class="info-box">
+        读取每个 Wiki 页面的 YAML frontmatter <code>sources:</code> 列表，
+        将 <code>## 来源</code> 节替换为 <code>[[sources/xxx|display_name]]</code> wikilink。
+        需要 <code>pyyaml</code>（<code>~/.venvs/paddleocr</code> 已包含）。
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow"><div class="arrow-line"></div><div class="arrow-head"></div></div>
+
+  <!-- ── Stage 7: Report ── -->
+  <div class="node" onclick="toggle(this)">
+    <div class="node-header">
+      <span class="badge sky">7</span>
+      <div>
+        <div class="node-title">Stage 7 · Pipeline 报告</div>
+        <div class="node-desc">写入 WIKI_DIR/pipeline_report.md — 覆盖完整转换统计</div>
+      </div>
+      <span class="tag io">报告</span>
+      <span class="chevron">▼</span>
+    </div>
+    <div class="node-detail">
+      <table class="params">
+        <tr><th>报告章节</th><th>内容</th></tr>
+        <tr><td>Raw 文件收集</td><td>按格式分类（PPTX/PDF/DOCX/…）</td></tr>
+        <tr><td>格式转换</td><td>按原子 Skill 统计（docx-to-md / pptx-to-md / pdf-to-md 文字路径）</td></tr>
+        <tr><td>OCR</td><td>输入 PDF 数、成功、失败、成功率、提取图片数、大小</td></tr>
+        <tr><td>Wiki</td><td>按类目页面数、源文件覆盖率</td></tr>
+        <tr><td>目录结构</td><td>最终 tree</td></tr>
+      </table>
+      <div style="margin-top:8px;" class="info-box">
+        参见 <code>references/pipeline-report-template.md</code> 获取精确格式模板
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow">
+    <div class="arrow-line"></div>
+    <div class="arrow-head"></div>
+    <div class="arrow-label">完成</div>
+  </div>
+
+  <!-- ── Final output ── -->
+  <div class="output-box">
+    <div class="out-title">✅ 最终 Wiki 目录结构</div>
+    <div class="out-struct">
+      &lt;slug&gt;_wiki/ &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;← Obsidian 兼容 Wiki<br>
+      &nbsp;&nbsp;├── index.md &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;← 导航页<br>
+      &nbsp;&nbsp;├── log.md &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;← 构建日志<br>
+      &nbsp;&nbsp;├── pipeline_report.md &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;← Stage 7 统计报告<br>
+      &nbsp;&nbsp;├── &lt;类目A&gt;/ &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;← 按主题分类的 Wiki 页<br>
+      &nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├── 主题页面.md<br>
+      &nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;└── …<br>
+      &nbsp;&nbsp;├── &lt;类目B&gt;/<br>
+      &nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;└── …<br>
+      &nbsp;&nbsp;└── sources/ &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;← 原始 MD（含图片）<br>
+      &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├── &lt;docname&gt;/<br>
+      &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├── &lt;docname&gt;.md<br>
+      &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;└── imgs/<br>
+      &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└── …
+    </div>
+    <div style="margin-top:12px;font-size:12px;color:#374151;line-height:1.9;">
+      · 原子 Skill 独立可用：<code>pdf-to-md</code>、<code>docx-to-md</code>、<code>pptx-to-md</code> 可不经 docs-to-wiki 直接调用<br>
+      · OCR 幂等：retry 脚本检查已有输出，网络中断后可安全重跑<br>
+      · Wiki 页面纯文字合成，读者通过 <code>sources/</code> wikilink 查看原文图片<br>
+      · 所有脚本位于 <code>~/.claude/skills/docs-to-wiki/scripts/</code>，支持 <code>--help</code>
+    </div>
+  </div>
+
+</div><!-- end pipeline -->
+
+<script>
+function toggle(el) {
+  el.classList.toggle('open');
+}
+function toggle2(el) {
+  const d = el.querySelector('.detail2');
+  if (d) d.style.display = d.style.display === 'none' ? 'block' : 'none';
+}
+</script>
+</body>
+</html>

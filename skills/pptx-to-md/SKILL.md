@@ -2,10 +2,9 @@
 name: pptx-to-md
 description: 将 PPTX/PPSX 演示文稿批量转换为结构化 Markdown。每张幻灯片渲染为 PNG 保存到磁盘，可选 PaddleOCR 并行提取文字作为 Vision 上下文，生成逐页持久化的 per_page/slide_NNN.md 桩文件——由 Claude agent 填写描述后 --merge-only 合并，无需单独 API Key。支持中断续跑（resume）。当用户提到"PPTX转Markdown"、"PPT转笔记"、"演示文稿提取"、"幻灯片转md"、"PPT转Markdown"时，务必使用本 Skill。
 ---
-
 # PPTX → Markdown
 
-PPTX 中信息往往通过视觉布局（左右对比、流程图箭头、图表）呈现——单纯文字提取会丢失大量结构。本 Skill 将每张幻灯片渲染成 PNG，可选用 PaddleOCR 并行提取文字作为 Vision 提示词上下文，由 Claude agent 用内置 Vision 描述完整内容。**无需单独 Anthropic API Key**。
+PPTX 中信息往往通过视觉布局（左右对比、流程图箭头、图表）呈现——单纯文字提取会丢失大量结构。本 Skill 将每张幻灯片渲染成 PNG，可选用 PaddleOCR 并行提取文字作为 Vision 提示词上下文，由 Claude agent 用内置 Vision 描述完整内容。 
 
 ## 流程
 
@@ -28,6 +27,7 @@ PPTX → PDF (LibreOffice) → PNG 96dpi (pymupdf)
 ```
 
 输出：
+
 - `<output_dir>/<stem>/slides/slide_NNN.png` — 96dpi PNG（持久保存，agent 可 Read）
 - `<output_dir>/<stem>/per_page/slide_NNN.md` — 桩文件（含图片绝对路径 + OCR 文字，如有）
 - `<output_dir>/<stem>.md` — 初步合并（桩状态，用于索引；最终由 --merge-only 更新）
@@ -35,6 +35,7 @@ PPTX → PDF (LibreOffice) → PNG 96dpi (pymupdf)
 若设置了 `PADDLEOCR_TOKEN` 和 `PADDLEOCR_API_URL`，脚本会自动并行 OCR 所有幻灯片，将文字写入桩文件供 Vision 参考。未设置则跳过 OCR，桩文件仍正常生成。
 
 **桩文件格式示例**（含 OCR）：
+
 ```
 <!-- pptx-to-md:stub -->
 <!-- png: /Users/zen/out/deck/slides/slide_003.png -->
@@ -59,7 +60,7 @@ PPTX → PDF (LibreOffice) → PNG 96dpi (pymupdf)
    - OCR 文字（如有）：`<!-- ocr:` … `-->` 块内容
 2. Read 图片（绝对路径）
 3. 结合 OCR 文字（辅助核对词语）+ 图片内容，描述幻灯片：标题/副标题、正文层级、流程图节点与箭头、图表数值与坐标轴、对比布局、完整表格
-4. Write **覆写** `per_page/slide_NNN.md`，写入纯 Markdown 描述  
+4. Write **覆写** `per_page/slide_NNN.md`，写入纯 Markdown 描述
    （**不要**写 `## Slide N` 标题；**不要**写 `![](...)` 图片链接；**不要**保留 sentinel）
 
 **每个 Subagent Prompt 模板**（传入 ≤8 个 per_page 路径）：
@@ -67,11 +68,13 @@ PPTX → PDF (LibreOffice) → PNG 96dpi (pymupdf)
 > 对以下桩文件路径列表，按顺序逐一处理每张幻灯片：
 >
 > 路径：
+>
 > - /path/to/per_page/slide_003.md
 > - /path/to/per_page/slide_004.md
-> （最多 8 条）
+>   （最多 8 条）
 >
 > 对每个路径：
+>
 > 1. Read 该 .md 文件——第二行含图片绝对路径，`<!-- ocr: -->` 块含 OCR 文字（可能没有）
 > 2. Read 图片（绝对路径）
 > 3. 生成完整 Markdown 描述（标题、正文层级、流程图、图表数值、对比布局、完整表格）；参考 OCR 文字辅助识别词语
@@ -111,22 +114,23 @@ PPTX → PDF (LibreOffice) → PNG 96dpi (pymupdf)
 Standalone 模式支持 resume：中途崩溃后重跑同一命令，自动跳过已填写的幻灯片。
 
 询问用户选择模型（standalone 模式下）：
+
 > 请问要用哪个 Claude 模型进行 Vision 处理？直接回车使用默认（`claude-haiku-4-5-20251001`）。
 
 ---
 
 ## 关键参数
 
-| 参数 | 默认值 | 说明 |
-|------|--------|------|
-| `--dpi` | 96 | 幻灯片渲染分辨率。文字为主用 72；密集图表用 120 |
-| `--max-slides` | 200 | 单文件幻灯片数上限（费用保护） |
-| `--merge-only` | — | 仅合并已有 per_page MDs，不重新渲染/OCR |
-| `--ocr-concurrent` | 5 | 并行 OCR API 调用数 |
-| `--no-resume` | — | 强制重新处理所有幻灯片（忽略已填写文件） |
-| `--api-key` | — | Standalone 模式触发（仅用户明确要求时传入） |
-| `--model` | `DOCS_TO_WIKI_MODEL` / `claude-haiku-4-5-20251001` | standalone 模式 Vision 模型 |
-| `--concurrent` | 5 | standalone 模式并行 Vision 调用数 |
+| 参数                 | 默认值                                                 | 说明                                            |
+| -------------------- | ------------------------------------------------------ | ----------------------------------------------- |
+| `--dpi`            | 96                                                     | 幻灯片渲染分辨率。文字为主用 72；密集图表用 120 |
+| `--max-slides`     | 200                                                    | 单文件幻灯片数上限（费用保护）                  |
+| `--merge-only`     | —                                                     | 仅合并已有 per_page MDs，不重新渲染/OCR         |
+| `--ocr-concurrent` | 5                                                      | 并行 OCR API 调用数                             |
+| `--no-resume`      | —                                                     | 强制重新处理所有幻灯片（忽略已填写文件）        |
+| `--api-key`        | —                                                     | Standalone 模式触发（仅用户明确要求时传入）     |
+| `--model`          | `DOCS_TO_WIKI_MODEL` / `claude-haiku-4-5-20251001` | standalone 模式 Vision 模型                     |
+| `--concurrent`     | 5                                                      | standalone 模式并行 Vision 调用数               |
 
 ## 环境
 

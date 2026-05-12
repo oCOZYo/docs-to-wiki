@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>docx-to-md 处理流程</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: #f0f2f5;
+    color: #1a1a2e;
+    padding: 32px 20px 60px;
+  }
+  h1 {
+    text-align: center;
+    font-size: 22px;
+    font-weight: 700;
+    margin-bottom: 4px;
+    color: #1a1a2e;
+  }
+  .subtitle {
+    text-align: center;
+    font-size: 13px;
+    color: #666;
+    margin-bottom: 40px;
+  }
+  .pipeline {
+    max-width: 820px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+  }
+
+  .node {
+    width: 100%;
+    background: #fff;
+    border-radius: 12px;
+    padding: 16px 20px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.07);
+    cursor: pointer;
+    transition: box-shadow .15s, transform .1s;
+    position: relative;
+  }
+  .node:hover { box-shadow: 0 6px 20px rgba(0,0,0,.13); transform: translateY(-1px); }
+  .node-header { display: flex; align-items: center; gap: 12px; }
+  .badge {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 32px; height: 32px; border-radius: 50%;
+    font-size: 13px; font-weight: 700; flex-shrink: 0;
+    color: #fff;
+  }
+  .badge.blue   { background: #3b82f6; }
+  .badge.indigo { background: #6366f1; }
+  .badge.purple { background: #8b5cf6; }
+  .badge.orange { background: #f59e0b; }
+  .badge.green  { background: #10b981; }
+  .badge.gray   { background: #6b7280; }
+  .badge.teal   { background: #0d9488; }
+  .badge.cyan   { background: #0891b2; }
+
+  .node-title { font-size: 15px; font-weight: 600; flex: 1; }
+  .node-desc  { font-size: 13px; color: #555; margin-top: 2px; }
+  .tag {
+    font-size: 11px; padding: 2px 8px; border-radius: 20px;
+    font-weight: 600; white-space: nowrap;
+  }
+  .tag.lib  { background: #e0f2fe; color: #0369a1; }
+  .tag.api  { background: #fce7f3; color: #be185d; }
+  .tag.io   { background: #d1fae5; color: #065f46; }
+  .tag.opt  { background: #f3e8ff; color: #7c3aed; }
+
+  .node-detail {
+    display: none;
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid #f0f0f0;
+  }
+  .node.open .node-detail { display: block; }
+  .chevron {
+    font-size: 12px; color: #aaa; transition: transform .2s; margin-left: auto;
+  }
+  .node.open .chevron { transform: rotate(180deg); }
+
+  .params { width: 100%; border-collapse: collapse; font-size: 12.5px; margin-top: 8px; }
+  .params th {
+    background: #f8fafc; text-align: left; padding: 6px 10px;
+    font-weight: 600; color: #374151; border-bottom: 1px solid #e5e7eb;
+  }
+  .params td { padding: 6px 10px; border-bottom: 1px solid #f0f0f0; vertical-align: top; }
+  .params tr:last-child td { border-bottom: none; }
+  code {
+    background: #f1f5f9; padding: 1px 5px; border-radius: 4px;
+    font-size: 12px; font-family: "SF Mono", Menlo, monospace;
+  }
+  .default { color: #6366f1; font-weight: 600; }
+
+  .arrow {
+    display: flex; flex-direction: column; align-items: center;
+    height: 36px; position: relative;
+  }
+  .arrow-line { width: 2px; background: #d1d5db; flex: 1; }
+  .arrow-head {
+    width: 0; height: 0;
+    border-left: 6px solid transparent;
+    border-right: 6px solid transparent;
+    border-top: 8px solid #d1d5db;
+  }
+  .arrow-label {
+    position: absolute; right: calc(50% + 12px);
+    top: 50%; transform: translateY(-50%);
+    font-size: 11px; color: #9ca3af; white-space: nowrap;
+  }
+
+  .mode-strip {
+    width: 100%; background: #fff7ed;
+    border: 1px solid #fed7aa; border-radius: 12px;
+    padding: 14px 18px;
+  }
+  .mode-header {
+    display: flex; align-items: center; gap: 8px;
+    font-weight: 700; font-size: 13.5px; margin-bottom: 10px;
+    color: #c2410c;
+  }
+
+  .output-box {
+    width: 100%; background: #f0fdf4;
+    border: 1px solid #86efac; border-radius: 12px;
+    padding: 16px 20px;
+  }
+  .output-box .out-title { font-weight: 700; font-size: 14px; color: #166534; margin-bottom: 8px; }
+  .out-struct { font-family: "SF Mono", Menlo, monospace; font-size: 12px; color: #374151; line-height: 1.9; }
+
+  .info-box {
+    background: #f0f9ff; border: 1px solid #bae6fd;
+    border-radius: 8px; padding: 10px 14px;
+    font-size: 12px; color: #0369a1; line-height: 1.7;
+  }
+  .warn-box {
+    background: #fff1f2; border: 1px dashed #fca5a5;
+    border-radius: 8px; padding: 8px 12px;
+    font-size: 12px; color: #b91c1c;
+  }
+  .green-box {
+    background: #f0fdf4; border: 1px solid #86efac;
+    border-radius: 8px; padding: 10px 14px;
+    font-size: 12px; color: #166534; line-height: 1.7;
+  }
+
+  /* core concept highlight */
+  .concept-strip {
+    width: 100%; background: #faf5ff;
+    border: 1px solid #ddd6fe; border-radius: 12px;
+    padding: 14px 18px; margin-bottom: 0;
+  }
+  .concept-header {
+    font-weight: 700; font-size: 13.5px; margin-bottom: 8px; color: #5b21b6;
+  }
+</style>
+</head>
+<body>
+
+<h1>docx-to-md 处理流程</h1>
+<p class="subtitle">点击各节点展开参数详情 · 脚本层（docx_to_md.py）+ Agent 判断层（SKILL.md）· 更新至当前版本</p>
+
+<div class="pipeline">
+
+  <!-- ── Core concept ── -->
+  <div class="concept-strip">
+    <div class="concept-header">💡 核心原则</div>
+    <div style="font-size:13px;color:#374151;line-height:1.8;">
+      DOCX 是结构化 XML，<strong>文字可直接无损提取</strong>，无需 OCR。
+      嵌入图片（架构图、流程图、截图）若占比较大，图文关系本身是信息——本 Skill 将图片提取到磁盘，
+      由 Claude agent 用内置 Vision 描述完整内容，<strong>无需单独 Anthropic API Key</strong>。
+    </div>
+    <div style="margin-top:8px;font-size:12px;font-family:'SF Mono',Menlo,monospace;color:#6b7280;line-height:1.8;">
+      DOCX → python-docx 提取文字/表格 → 图片保存磁盘 → .md 含 ![](...) 占位符 → agent 填入描述
+    </div>
+  </div>
+
+  <div class="arrow"><div class="arrow-line"></div><div class="arrow-head"></div></div>
+
+  <!-- ── Entry ── -->
+  <div class="node" onclick="toggle(this)">
+    <div class="node-header">
+      <span class="badge gray">▶</span>
+      <div>
+        <div class="node-title">入口 · 参数解析</div>
+        <div class="node-desc">指定 DOCX 文件或目录，读取可选参数</div>
+      </div>
+      <span class="tag io">I/O</span>
+      <span class="chevron">▼</span>
+    </div>
+    <div class="node-detail">
+      <table class="params">
+        <tr><th>参数</th><th>默认值</th><th>说明</th></tr>
+        <tr><td><code>--input</code></td><td>必填</td><td>DOCX 文件 或 目录（批量处理）</td></tr>
+        <tr><td><code>--output</code></td><td>必填</td><td>输出目录（自动创建）</td></tr>
+        <tr><td><code>--large-image-kb</code></td><td class="default">30</td><td>图片 blob 超过此值（KB）才提取/描述，过滤徽标/图标</td></tr>
+        <tr><td><code>--no-images</code></td><td>—</td><td>纯文字模式，跳过所有图片，零 API 消耗</td></tr>
+        <tr><td><code>--max-images</code></td><td class="default">50</td><td>单文档图片数上限（费用保护）</td></tr>
+        <tr><td><code>--api-key</code></td><td>—</td><td>传入则启用 Standalone 模式，脚本自行调用 Vision</td></tr>
+        <tr><td><code>--model</code></td><td class="default">DOCS_TO_WIKI_MODEL /<br>claude-haiku-4-5-20251001</td><td>Standalone 模式 Vision 模型</td></tr>
+      </table>
+      <div style="margin-top:10px;" class="info-box">
+        <strong>Python 路径：</strong><code>~/.venvs/paddleocr/bin/python</code>（含 python-docx）<br>
+        <strong>注意：</strong>仅支持 <code>.docx</code>；遗留 <code>.doc</code> 需先转换：<code>soffice --headless --convert-to docx file.doc</code>
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow"><div class="arrow-line"></div><div class="arrow-head"></div></div>
+
+  <!-- ── Mode decision ── -->
+  <div class="mode-strip">
+    <div class="mode-header">⚡ 模式选择（由 <code>--api-key</code> 是否传入决定）</div>
+    <div style="display:flex;gap:10px;">
+      <div style="flex:1.4;background:#fff;border:2px solid #10b981;border-radius:8px;padding:10px 14px;font-size:12.5px;">
+        <div style="font-weight:700;color:#065f46;margin-bottom:5px;">✅ Agent 模式（默认，零配置）</div>
+        <div style="color:#555;line-height:1.8;">
+          不传 <code>--api-key</code><br>
+          脚本提取文字/表格 + 保存图片到磁盘<br>
+          由 Claude Code 内置 Vision 填写 <code>![](...)</code> 占位符<br>
+          <strong>无需单独 Anthropic API Key</strong>
+        </div>
+      </div>
+      <div style="flex:1;background:#fff;border:1px solid #d1d5db;border-radius:8px;padding:10px 14px;font-size:12.5px;">
+        <div style="font-weight:700;color:#6b7280;margin-bottom:5px;">🔧 Standalone 模式</div>
+        <div style="color:#555;line-height:1.8;">
+          <strong>仅用户明确要求时</strong>传 <code>--api-key sk-ant-…</code><br>
+          脚本自行调用 Vision API<br>
+          适合后台 / cron 无人值守场景
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow"><div class="arrow-line"></div><div class="arrow-head"></div></div>
+
+  <!-- ── Step 1: Extraction ── -->
+  <div class="node" onclick="toggle(this)">
+    <div class="node-header">
+      <span class="badge green">1</span>
+      <div>
+        <div class="node-title">运行提取脚本 &nbsp;<small style="font-weight:400;color:#888">python-docx · 无损提取</small></div>
+        <div class="node-desc">标题/段落/表格按原顺序排列，嵌入图片提取到磁盘，生成含占位符的 .md</div>
+      </div>
+      <span class="tag lib">python-docx</span>
+      <span class="tag io">I/O</span>
+      <span class="chevron">▼</span>
+    </div>
+    <div class="node-detail">
+      <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:12px 14px;font-family:'SF Mono',Menlo,monospace;font-size:11px;line-height:1.8;margin-bottom:10px;">
+        ~/.venvs/paddleocr/bin/python \<br>
+        &nbsp;&nbsp;~/.cc-switch/skills/docx-to-md/scripts/docx_to_md.py \<br>
+        &nbsp;&nbsp;--input "&lt;docx_or_dir&gt;" \<br>
+        &nbsp;&nbsp;--output "&lt;output_dir&gt;"
+      </div>
+      <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:12px 14px;font-size:12px;margin-bottom:10px;">
+        <strong>生成的 .md 示例：</strong>
+        <div style="font-family:'SF Mono',Menlo,monospace;font-size:11px;line-height:1.9;margin-top:6px;color:#374151;">
+          # 项目说明<br><br>
+          这是第一段正文。<br><br>
+          ![](my_doc/imgs/img_001.png)<br><br>
+          | 列A | 列B |<br>
+          |-----|-----|<br>
+          | 数据1 | 数据2 |
+        </div>
+      </div>
+      <div class="green-box">
+        <strong>输出：</strong><br>
+        · <code>&lt;output_dir&gt;/&lt;stem&gt;.md</code> — 文字/表格 + <code>![](…)</code> 图片占位符<br>
+        · <code>&lt;output_dir&gt;/&lt;stem&gt;/imgs/img_NNN.{ext}</code> — 提取的嵌入图片（持久保存）
+      </div>
+      <div style="margin-top:8px;" class="warn-box">
+        <strong>限制：</strong>不处理 EMF/WMF 矢量格式（python-docx 不直接暴露）；主要识别 PNG/JPEG/GIF/BMP/WEBP 嵌入图
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow"><div class="arrow-line"></div><div class="arrow-head"></div></div>
+
+  <!-- ── Step 2: Fill image descriptions ── -->
+  <div class="node" onclick="toggle(this)">
+    <div class="node-header">
+      <span class="badge blue">2</span>
+      <div>
+        <div class="node-title">填写图片描述 &nbsp;<small style="font-weight:400;color:#888">Agent 模式 · 仅有嵌入图时执行</small></div>
+        <div class="node-desc">Read tool 读取图片 → Edit 替换 ![](...) 占位符为完整 Markdown 描述</div>
+      </div>
+      <span class="tag api">Vision</span>
+      <span class="tag opt">有图时执行</span>
+      <span class="chevron">▼</span>
+    </div>
+    <div class="node-detail">
+      <div style="display:flex;gap:10px;margin-bottom:10px;">
+        <div style="flex:1;background:#f0fdf4;border:1px solid #86efac;border-radius:6px;padding:10px 12px;font-size:12px;">
+          <strong style="color:#166534;">≤ 5 张图片</strong><br>
+          直接用 Read tool 逐张读取<br>
+          Edit 替换占位符
+        </div>
+        <div style="flex:1;background:#f0f9ff;border:1px solid #bae6fd;border-radius:6px;padding:10px 12px;font-size:12px;">
+          <strong style="color:#0369a1;">&gt; 5 张 / 多文件批量</strong><br>
+          spawn subagents（每个 10–20 张）<br>
+          图片字节只进 subagent 上下文，主 agent 不膨胀
+        </div>
+      </div>
+      <div class="info-box" style="margin-bottom:10px;">
+        <strong>Subagent Prompt 模板：</strong><br>
+        对以下图片路径列表，逐一用 Read tool 读取图片，生成 Markdown 描述：
+        说明图片内容、流程图节点与箭头、图表数值与坐标轴、对比布局、完整表格。
+        返回 <code>[{path, description}]</code> JSON 数组。
+      </div>
+      <div class="info-box">
+        <strong>描述内容：</strong>图片内容、流程图节点与箭头、图表数值与坐标轴、对比布局、完整表格<br>
+        <strong>无需独立 API Key</strong>：使用 Claude Code 内置 Vision 能力
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow">
+    <div class="arrow-line"></div>
+    <div class="arrow-head"></div>
+    <div class="arrow-label">完成</div>
+  </div>
+
+  <!-- ── Standalone mode info ── -->
+  <div class="mode-strip">
+    <div class="mode-header">🔧 Standalone 模式（后台/cron 无人值守）</div>
+    <div style="background:#fff;border:1px solid #d1d5db;border-radius:8px;padding:12px 14px;font-family:'SF Mono',Menlo,monospace;font-size:11px;line-height:1.9;color:#374151;margin-bottom:10px;">
+      ~/.venvs/paddleocr/bin/python \<br>
+      &nbsp;&nbsp;~/.cc-switch/skills/docx-to-md/scripts/docx_to_md.py \<br>
+      &nbsp;&nbsp;--input file.docx --output out/ \<br>
+      &nbsp;&nbsp;<strong>--api-key sk-ant-...</strong> --model claude-haiku-4-5-20251001
+    </div>
+    <div style="font-size:12px;color:#555;line-height:1.7;">
+      也可用环境变量统一覆盖模型：<code>export DOCS_TO_WIKI_MODEL=claude-sonnet-4-6</code>
+    </div>
+  </div>
+
+  <div class="arrow"><div class="arrow-line"></div><div class="arrow-head"></div></div>
+
+  <!-- ── Final output ── -->
+  <div class="output-box">
+    <div class="out-title">✅ 最终输出结构</div>
+    <div class="out-struct">
+      output_dir/<br>
+      &nbsp;&nbsp;├── 文件A.md &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;← 最终 Markdown（文字/表格 + 图片描述）<br>
+      &nbsp;&nbsp;└── 文件A/<br>
+      &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└── imgs/<br>
+      &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├── img_001.png &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;← 提取的嵌入图（持久保存）<br>
+      &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├── img_002.jpg<br>
+      &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└── …
+    </div>
+    <div style="margin-top:12px;font-size:12px;color:#374151;line-height:1.9;">
+      · 文字提取无损，无 OCR 误差<br>
+      · 图片文件持久保存在 <code>&lt;stem&gt;/imgs/</code>，agent 可在任意时间点 Read<br>
+      · <code>--large-image-kb 30</code> 默认过滤掉徽标/图标等小图（30KB 以下）<br>
+      · <code>--no-images</code> 纯文字模式时完全零 API 消耗<br>
+      · 环境：<code>~/.venvs/paddleocr/bin/python</code>（含 python-docx）
+    </div>
+  </div>
+
+</div><!-- end pipeline -->
+
+<script>
+function toggle(el) {
+  el.classList.toggle('open');
+}
+</script>
+</body>
+</html>
