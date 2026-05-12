@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>pptx-to-md 处理流程</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: #f0f2f5;
+    color: #1a1a2e;
+    padding: 32px 20px 60px;
+  }
+  h1 {
+    text-align: center;
+    font-size: 22px;
+    font-weight: 700;
+    margin-bottom: 4px;
+    color: #1a1a2e;
+  }
+  .subtitle {
+    text-align: center;
+    font-size: 13px;
+    color: #666;
+    margin-bottom: 40px;
+  }
+  .pipeline {
+    max-width: 820px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+  }
+
+  /* ── Node cards ── */
+  .node {
+    width: 100%;
+    background: #fff;
+    border-radius: 12px;
+    padding: 16px 20px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.07);
+    cursor: pointer;
+    transition: box-shadow .15s, transform .1s;
+    position: relative;
+  }
+  .node:hover { box-shadow: 0 6px 20px rgba(0,0,0,.13); transform: translateY(-1px); }
+  .node-header { display: flex; align-items: center; gap: 12px; }
+  .badge {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 32px; height: 32px; border-radius: 50%;
+    font-size: 13px; font-weight: 700; flex-shrink: 0;
+    color: #fff;
+  }
+  .badge.blue   { background: #3b82f6; }
+  .badge.indigo { background: #6366f1; }
+  .badge.purple { background: #8b5cf6; }
+  .badge.orange { background: #f59e0b; }
+  .badge.green  { background: #10b981; }
+  .badge.gray   { background: #6b7280; }
+  .badge.teal   { background: #0d9488; }
+  .badge.pink   { background: #ec4899; }
+
+  .node-title { font-size: 15px; font-weight: 600; flex: 1; }
+  .node-desc  { font-size: 13px; color: #555; margin-top: 2px; }
+  .tag {
+    font-size: 11px; padding: 2px 8px; border-radius: 20px;
+    font-weight: 600; white-space: nowrap;
+  }
+  .tag.lib  { background: #e0f2fe; color: #0369a1; }
+  .tag.api  { background: #fce7f3; color: #be185d; }
+  .tag.para { background: #fef3c7; color: #92400e; }
+  .tag.io   { background: #d1fae5; color: #065f46; }
+  .tag.opt  { background: #f3e8ff; color: #7c3aed; }
+
+  /* expandable detail */
+  .node-detail {
+    display: none;
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid #f0f0f0;
+  }
+  .node.open .node-detail { display: block; }
+  .chevron {
+    font-size: 12px; color: #aaa; transition: transform .2s; margin-left: auto;
+  }
+  .node.open .chevron { transform: rotate(180deg); }
+
+  /* params table */
+  .params { width: 100%; border-collapse: collapse; font-size: 12.5px; margin-top: 8px; }
+  .params th {
+    background: #f8fafc; text-align: left; padding: 6px 10px;
+    font-weight: 600; color: #374151; border-bottom: 1px solid #e5e7eb;
+  }
+  .params td { padding: 6px 10px; border-bottom: 1px solid #f0f0f0; vertical-align: top; }
+  .params tr:last-child td { border-bottom: none; }
+  code {
+    background: #f1f5f9; padding: 1px 5px; border-radius: 4px;
+    font-size: 12px; font-family: "SF Mono", Menlo, monospace;
+  }
+  .default { color: #6366f1; font-weight: 600; }
+
+  /* arrows */
+  .arrow {
+    display: flex; flex-direction: column; align-items: center;
+    height: 36px; position: relative;
+  }
+  .arrow-line {
+    width: 2px; background: #d1d5db; flex: 1;
+  }
+  .arrow-head {
+    width: 0; height: 0;
+    border-left: 6px solid transparent;
+    border-right: 6px solid transparent;
+    border-top: 8px solid #d1d5db;
+  }
+  .arrow-label {
+    position: absolute; right: calc(50% + 12px);
+    top: 50%; transform: translateY(-50%);
+    font-size: 11px; color: #9ca3af; white-space: nowrap;
+  }
+
+  /* branch node (fork) */
+  .branch {
+    width: 100%;
+    display: flex; gap: 12px; align-items: flex-start;
+  }
+  .branch-side {
+    flex: 1; background: #fff; border-radius: 12px;
+    padding: 14px 16px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.07);
+    font-size: 13px;
+  }
+  .branch-side .bl { font-weight: 600; margin-bottom: 6px; font-size: 13px; }
+  .branch-side ul { padding-left: 18px; color: #555; line-height: 1.8; }
+  .branch-label {
+    text-align: center; font-size: 11px; font-weight: 600;
+    margin-bottom: 6px; color: #6b7280; letter-spacing: .5px; text-transform: uppercase;
+  }
+
+  /* error path */
+  .error-box {
+    background: #fff1f2; border: 1px dashed #fca5a5;
+    border-radius: 10px; padding: 10px 16px;
+    font-size: 12.5px; color: #b91c1c; margin-top: 10px;
+  }
+  .error-box strong { font-weight: 700; }
+
+  /* mode decision strip */
+  .mode-strip {
+    width: 100%; background: #fff7ed;
+    border: 1px solid #fed7aa; border-radius: 12px;
+    padding: 14px 18px;
+  }
+  .mode-header {
+    display: flex; align-items: center; gap: 8px;
+    font-weight: 700; font-size: 13.5px; margin-bottom: 10px;
+    color: #c2410c;
+  }
+
+  /* agent vision strip */
+  .parallel-strip {
+    width: 100%; background: #f0f9ff;
+    border: 1px solid #bae6fd; border-radius: 12px;
+    padding: 14px 18px;
+  }
+  .para-header {
+    display: flex; align-items: center; gap: 8px;
+    font-weight: 600; font-size: 13.5px; margin-bottom: 10px;
+    color: #0369a1;
+  }
+
+  /* final output */
+  .output-box {
+    width: 100%; background: #f0fdf4;
+    border: 1px solid #86efac; border-radius: 12px;
+    padding: 16px 20px;
+  }
+  .output-box .out-title { font-weight: 700; font-size: 14px; color: #166534; margin-bottom: 8px; }
+  .out-struct { font-family: "SF Mono", Menlo, monospace; font-size: 12px; color: #374151; line-height: 1.9; }
+
+  /* section label above loop */
+  .loop-label {
+    width: 100%; text-align: left;
+    font-size: 11px; font-weight: 700;
+    color: #6b7280; letter-spacing: .8px; text-transform: uppercase;
+    padding: 0 4px; margin-bottom: -4px;
+  }
+  .loop-wrap {
+    width: 100%; border: 2px dashed #cbd5e1;
+    border-radius: 16px; padding: 16px 16px 20px;
+    display: flex; flex-direction: column; align-items: center; gap: 0;
+  }
+
+  /* info callout */
+  .info-box {
+    background: #f0f9ff; border: 1px solid #bae6fd;
+    border-radius: 8px; padding: 10px 14px;
+    font-size: 12px; color: #0369a1; line-height: 1.7;
+  }
+  .warn-box {
+    background: #fff1f2; border: 1px dashed #fca5a5;
+    border-radius: 8px; padding: 8px 12px;
+    font-size: 12px; color: #b91c1c;
+  }
+  .ocr-box {
+    background: #f5f3ff; border: 1px solid #ddd6fe;
+    border-radius: 8px; padding: 10px 14px;
+    font-size: 12px; color: #5b21b6; line-height: 1.7;
+  }
+</style>
+</head>
+<body>
+
+<h1>pptx-to-md 处理流程</h1>
+<p class="subtitle">点击各节点展开参数详情 · 脚本层（pptx_to_md.py）+ Agent 判断层（SKILL.md）· 更新至当前版本</p>
+
+<div class="pipeline">
+
+  <!-- ── 0. Entry ── -->
+  <div class="node" onclick="toggle(this)">
+    <div class="node-header">
+      <span class="badge gray">▶</span>
+      <div>
+        <div class="node-title">入口 · 参数解析</div>
+        <div class="node-desc">argparse 解析命令行，读取 OCR 环境变量，发现输入文件</div>
+      </div>
+      <span class="tag io">I/O</span>
+      <span class="chevron">▼</span>
+    </div>
+    <div class="node-detail">
+      <table class="params">
+        <tr><th>参数</th><th>默认值</th><th>说明</th></tr>
+        <tr><td><code>--input</code></td><td>必填</td><td>PPTX/PPSX 文件 或 目录</td></tr>
+        <tr><td><code>--output</code></td><td>必填</td><td>输出目录（自动创建）</td></tr>
+        <tr><td><code>--dpi</code></td><td class="default">96</td><td>PNG 渲染分辨率。文字为主用 72；密集图表用 120</td></tr>
+        <tr><td><code>--max-slides</code></td><td class="default">200</td><td>单文件幻灯片数上限（费用保护）</td></tr>
+        <tr><td><code>--merge-only</code></td><td>—</td><td>仅合并已有 per_page MDs → stem.md，跳过渲染/OCR</td></tr>
+        <tr><td><code>--ocr-concurrent</code></td><td class="default">5</td><td>并行 OCR API 调用数</td></tr>
+        <tr><td><code>--no-resume</code></td><td>—</td><td>强制重新处理所有幻灯片（忽略已填写文件）</td></tr>
+        <tr><td><code>--api-key</code></td><td>—</td><td>Anthropic API Key。<strong>仅用户明确要求 Standalone 模式时传入</strong>；即使环境中有 ANTHROPIC_API_KEY 也不自动使用</td></tr>
+        <tr><td><code>--model</code></td><td class="default">DOCS_TO_WIKI_MODEL /<br>claude-haiku-4-5-20251001</td><td>Standalone 模式 Vision 模型</td></tr>
+        <tr><td><code>--concurrent</code></td><td class="default">5</td><td>Standalone 模式并行 Vision 调用数</td></tr>
+      </table>
+      <div style="margin-top:10px;" class="ocr-box">
+        <strong>OCR 环境变量（可选，从 env 读取，不走 CLI）：</strong><br>
+        <code>PADDLEOCR_TOKEN</code> — AI Studio 凭证<br>
+        <code>PADDLEOCR_API_URL</code> — 云端 layout-parsing 端点<br>
+        两者均设置时自动启用 OCR；未设置则跳过（仅影响 Vision 上下文质量）
+      </div>
+      <div style="margin-top:8px;" class="info-box">
+        <strong>Python 路径：</strong><code>~/.venvs/general/bin/python</code>（含 pymupdf、requests）<br>
+        需要 <code>soffice</code>（LibreOffice）在 PATH 中；<code>anthropic</code> 包仅 Standalone 模式需要
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow"><div class="arrow-line"></div><div class="arrow-head"></div></div>
+
+  <!-- ── Mode decision ── -->
+  <div class="mode-strip">
+    <div class="mode-header">⚡ 模式选择（由 <code>--api-key</code> 是否传入决定）</div>
+    <div style="display:flex;gap:10px;">
+      <div style="flex:1.4;background:#fff;border:2px solid #10b981;border-radius:8px;padding:10px 14px;font-size:12.5px;">
+        <div style="font-weight:700;color:#065f46;margin-bottom:5px;">✅ Agent 模式（默认，零配置）</div>
+        <div style="color:#555;line-height:1.8;">
+          不传 <code>--api-key</code><br>
+          脚本渲染 PNG + OCR（可选）+ 写 per_page 桩文件<br>
+          由 Claude Code 内置 Vision 填写描述，再 <code>--merge-only</code><br>
+          <strong>无需单独 Anthropic API Key</strong>
+        </div>
+      </div>
+      <div style="flex:1;background:#fff;border:1px solid #d1d5db;border-radius:8px;padding:10px 14px;font-size:12.5px;">
+        <div style="font-weight:700;color:#6b7280;margin-bottom:5px;">🔧 Standalone 模式</div>
+        <div style="color:#555;line-height:1.8;">
+          <strong>仅用户明确要求时</strong>传 <code>--api-key sk-ant-…</code><br>
+          脚本自行 OCR + Vision，全自动完成<br>
+          适合后台 / cron 无人值守场景<br>
+          <span style="color:#b91c1c;font-size:11px;">⚠ 即使环境有 ANTHROPIC_API_KEY 也不自动触发</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow"><div class="arrow-line"></div><div class="arrow-head"></div></div>
+
+  <!-- ── File discovery ── -->
+  <div class="branch">
+    <div class="branch-side">
+      <div class="branch-label">输入是目录</div>
+      <div class="bl">📁 扫描目录</div>
+      <ul>
+        <li>扫描 <code>.pptx</code> / <code>.ppsx</code></li>
+        <li>按文件名字母排序</li>
+        <li>跳过其他格式</li>
+      </ul>
+    </div>
+    <div class="branch-side">
+      <div class="branch-label">输入是单文件</div>
+      <div class="bl">📄 直接处理</div>
+      <ul>
+        <li>仅处理该文件</li>
+        <li>不做目录扫描</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="arrow"><div class="arrow-line"></div><div class="arrow-head"></div></div>
+
+  <!-- ── Loop ── -->
+  <div class="loop-label">⟳ 顺序遍历每个文件</div>
+  <div class="loop-wrap">
+
+    <!-- Step 1: PPTX → PDF -->
+    <div class="node" onclick="toggle(this)">
+      <div class="node-header">
+        <span class="badge blue">1</span>
+        <div>
+          <div class="node-title">PPTX → PDF &nbsp;<small style="font-weight:400;color:#888">LibreOffice headless</small></div>
+          <div class="node-desc">soffice 转换，独立 profile 防并发 lock；PDF 写入临时目录</div>
+        </div>
+        <span class="tag lib">LibreOffice</span>
+        <span class="chevron">▼</span>
+      </div>
+      <div class="node-detail">
+        <table class="params">
+          <tr><th>细节</th><th>值</th></tr>
+          <tr><td>命令</td><td><code>soffice --headless --convert-to pdf</code></td></tr>
+          <tr><td>profile 隔离</td><td><code>/tmp/lo_profile_pptx2md_{worker_id}</code><br><small>防止多文件并行时 soffice lock 冲突</small></td></tr>
+          <tr><td>超时</td><td>120 秒</td></tr>
+          <tr><td>成功条件</td><td>PDF 存在 且 大小 &gt; 0</td></tr>
+          <tr><td>PDF 存储</td><td><code>tempfile.TemporaryDirectory</code>（处理完自动清除）</td></tr>
+        </table>
+        <div class="error-box">
+          <strong>失败路径：</strong>转换失败（超时、soffice 不存在、文件损坏）→
+          写入 <code>{stem}.md</code> 内容为 <code>*[PDF conversion failed]*</code> → 跳至下一文件
+        </div>
+        <div style="margin-top:8px;" class="info-box">
+          <strong>注：</strong>macOS 下 LibreOffice 的 <code>--convert-to png</code> 仅导出第一页，因此走 PDF 中间路径再用 pymupdf 逐页渲染。
+        </div>
+      </div>
+    </div>
+
+    <div class="arrow"><div class="arrow-line"></div><div class="arrow-head"></div></div>
+
+    <!-- Step 2: PDF → PNG -->
+    <div class="node" onclick="toggle(this)">
+      <div class="node-header">
+        <span class="badge indigo">2</span>
+        <div>
+          <div class="node-title">PDF → PNG &nbsp;<small style="font-weight:400;color:#888">pymupdf (fitz)</small></div>
+          <div class="node-desc">每页渲染为 PNG，<strong>持久保存</strong>到 <code>output_dir/stem/slides/</code>；Resume：已有正确数量则跳过重渲</div>
+        </div>
+        <span class="tag lib">pymupdf</span>
+        <span class="chevron">▼</span>
+      </div>
+      <div class="node-detail">
+        <table class="params">
+          <tr><th>细节</th><th>值</th></tr>
+          <tr><td>渲染矩阵</td><td><code>fitz.Matrix(dpi/72, dpi/72)</code> — 默认 96dpi ≈ 1.33× 原尺寸</td></tr>
+          <tr><td>色彩空间</td><td>RGB</td></tr>
+          <tr><td>命名规则</td><td><code>slide_001.png</code>, <code>slide_002.png</code> …（零补位3位）</td></tr>
+          <tr><td>截断</td><td><code>pngs = pngs[:max_slides]</code></td></tr>
+          <tr><td>⭐ 存储位置</td><td><code>output_dir/{stem}/slides/</code> — <strong>持久目录</strong>，脚本退出后 PNG 仍在磁盘</td></tr>
+          <tr><td>Resume</td><td>若 <code>slides/</code> 已有预期数量 PNG，跳过重渲（打印 <code>[resume]</code> 提示）</td></tr>
+        </table>
+        <div class="error-box">
+          <strong>失败路径：</strong>PNG 列表为空 →
+          写入 <code>{stem}.md</code> 内容为 <code>*[No slides rendered]*</code> → 跳至下一文件
+        </div>
+        <div style="margin-top:8px;padding:8px 12px;background:#faf5ff;border:1px solid #e9d5ff;border-radius:6px;font-size:12px;color:#6b21a8;">
+          <strong>文件大小参考（96dpi）：</strong>典型幻灯片 PNG 约 150KB–1.5MB，均值约 300KB，base64 后约 400KB。
+          每批 8 张 ≈ 3.2MB，远低于 32MB API 上限。高 DPI（120+）或内容密集时建议减小批次（4–5 张）。
+        </div>
+      </div>
+    </div>
+
+    <div class="arrow"><div class="arrow-line"></div><div class="arrow-head"></div></div>
+
+    <!-- Step 2b: OCR parallel (optional) -->
+    <div class="node" onclick="toggle(this)">
+      <div class="node-header">
+        <span class="badge teal">2b</span>
+        <div>
+          <div class="node-title">OCR 所有幻灯片（并行）&nbsp;<small style="font-weight:400;color:#888">PaddleOCR 云端</small></div>
+          <div class="node-desc">ThreadPoolExecutor 并行调用 · <strong>PADDLEOCR_TOKEN 存在时运行</strong>；未设置则跳过，桩文件无 OCR 块</div>
+        </div>
+        <span class="tag opt">可选</span>
+        <span class="tag api">API</span>
+        <span class="chevron">▼</span>
+      </div>
+      <div class="node-detail">
+        <table class="params">
+          <tr><th>细节</th><th>值</th></tr>
+          <tr><td>凭证来源</td><td>环境变量 <code>PADDLEOCR_TOKEN</code> + <code>PADDLEOCR_API_URL</code>（不走 CLI，token 不进 shell 历史）</td></tr>
+          <tr><td>并发数</td><td><code>--ocr-concurrent</code>，默认 5</td></tr>
+          <tr><td>超时</td><td>60 秒 / 张</td></tr>
+          <tr><td>请求格式</td><td><code>{"file": base64, "fileType": 1, "useDocOrientationClassify": true, "useDocUnwarping": false}</code></td></tr>
+          <tr><td>响应路径</td><td><code>result.layoutParsingResults[0].markdown.text</code></td></tr>
+          <tr><td>降级</td><td>单张失败 → 返回空字符串，其他张继续；无 token → 整批跳过</td></tr>
+        </table>
+        <div style="margin-top:10px;" class="ocr-box">
+          <strong>OCR 的作用：</strong>将提取的文字注入 Vision 提示词 <code>&lt;ocr_text&gt;</code> 块，
+          让 Vision 聚焦于视觉结构（流程图箭头、对比布局、图表趋势），
+          文字识别由 OCR 兜底——一次 Vision 调用同时获得结构和文字的高精度描述。
+        </div>
+        <div style="margin-top:8px;">
+          <div style="display:flex;gap:8px;">
+            <div style="flex:1;background:#f0fdf4;border:1px solid #86efac;border-radius:6px;padding:8px 12px;font-size:12px;">
+              <strong style="color:#166534;">有 PADDLEOCR_TOKEN：</strong><br>
+              并行 OCR → ocr_map {slide_num: text}
+            </div>
+            <div style="flex:1;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:8px 12px;font-size:12px;">
+              <strong style="color:#6b7280;">无 PADDLEOCR_TOKEN：</strong><br>
+              跳过 OCR → ocr_map = {} → 桩文件无 ocr 块，Vision 照常运行
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="arrow"><div class="arrow-line"></div><div class="arrow-head"></div></div>
+
+    <!-- Step 3: Write per-page stubs -->
+    <div class="node" onclick="toggle(this)">
+      <div class="node-header">
+        <span class="badge orange">3</span>
+        <div>
+          <div class="node-title">写 per_page 桩文件</div>
+          <div class="node-desc">每张幻灯片写 <code>per_page/slide_NNN.md</code>，含 sentinel + 图片绝对路径 + OCR 文字（如有）</div>
+        </div>
+        <span class="tag io">I/O</span>
+        <span class="chevron">▼</span>
+      </div>
+      <div class="node-detail">
+        <div style="margin-bottom:10px;" class="info-box">
+          <strong>Resume：</strong>若 per_page MD 已存在且不含 sentinel（已填写），则跳过该张——保留 subagent 的工作，支持中断续跑。
+        </div>
+        <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:12px 14px;font-family:'SF Mono',Menlo,monospace;font-size:11px;line-height:1.9;color:#374151;margin-bottom:10px;">
+          <span style="color:#6b7280;">&lt;!-- pptx-to-md:stub --&gt;</span><br>
+          <span style="color:#6b7280;">&lt;!-- png: /Users/zen/out/deck/slides/slide_003.png --&gt;</span><br>
+          <br>
+          <span style="color:#7c3aed;">&lt;!-- ocr:</span><br>
+          <span style="color:#7c3aed;">顺丰统保项目背景</span><br>
+          <span style="color:#7c3aed;">顺丰于2022年启动车辆全国统保...</span><br>
+          <span style="color:#7c3aed;">--&gt;</span>
+        </div>
+        <table class="params">
+          <tr><th>字段</th><th>说明</th></tr>
+          <tr><td>Sentinel</td><td><code>&lt;!-- pptx-to-md:stub --&gt;</code>（首行）— Resume 检测标志；已填写文件无此行</td></tr>
+          <tr><td>PNG 路径</td><td>绝对路径，subagent 无需推断 base dir</td></tr>
+          <tr><td>OCR 块</td><td>有 OCR 文字则写入 <code>&lt;!-- ocr: … --&gt;</code>；无则省略该块</td></tr>
+          <tr><td>已填写判断</td><td><code>file.read_bytes()[:32].startswith(b"&lt;!-- pptx-to-md:stub --&gt;")</code></td></tr>
+        </table>
+      </div>
+    </div>
+
+    <div class="arrow"><div class="arrow-line"></div><div class="arrow-head"></div></div>
+
+    <!-- Step 4: mode split -->
+    <div style="width:100%;display:flex;gap:12px;align-items:flex-start;">
+
+      <!-- Agent mode path -->
+      <div style="flex:1.4;background:#fff;border:2px solid #10b981;border-radius:12px;padding:14px 16px;">
+        <div style="font-size:12px;font-weight:700;color:#065f46;margin-bottom:8px;letter-spacing:.3px;">✅ AGENT 模式路径</div>
+
+        <div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:8px;">
+          <span class="badge" style="background:#0369a1;width:26px;height:26px;font-size:11px;flex-shrink:0;margin-top:2px;">4a</span>
+          <div>
+            <div style="font-size:13px;font-weight:600;color:#0369a1;">Agent / Subagents 填写 per_page MDs</div>
+            <div style="font-size:12px;color:#555;margin-top:2px;">直接写磁盘，不返回 JSON；崩溃后已写文件保留</div>
+          </div>
+        </div>
+
+        <div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:6px;padding:10px 12px;font-size:12px;color:#374151;line-height:1.8;margin-bottom:8px;">
+          <strong style="color:#0369a1;">按幻灯片数量选择策略：</strong><br>
+          <br>
+          <strong>≤ 5 张：</strong>Agent 直接逐张处理<br>
+          &nbsp;&nbsp;1. Read per_page stub → 提取 PNG 路径 + OCR 文字<br>
+          &nbsp;&nbsp;2. Read PNG<br>
+          &nbsp;&nbsp;3. Write 覆写 per_page MD（纯描述，无 sentinel）<br>
+          <br>
+          <strong>&gt; 5 张：spawn subagents（每批 ≤ 8 张）</strong><br>
+          &nbsp;&nbsp;图片字节只进 subagent 上下文，主 agent 不膨胀<br>
+          &nbsp;&nbsp;subagent 直接 Write 到 per_page MD<br>
+          &nbsp;&nbsp;Resume check：首行无 sentinel → 跳过（已处理）
+        </div>
+
+        <div class="warn-box" style="margin-bottom:10px;">
+          <strong>32MB 限制：</strong>96dpi PNG 均值约 300KB，base64 后约 400KB。
+          每批 8 张 ≈ 3.2MB。若 DPI 更高（120+），建议减至 4–5 张/批。
+        </div>
+
+        <div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:8px;">
+          <span class="badge green" style="width:26px;height:26px;font-size:11px;flex-shrink:0;margin-top:2px;">5a</span>
+          <div>
+            <div style="font-size:13px;font-weight:600;color:#166534;">--merge-only 合并（所有 subagents 完成后）</div>
+            <div style="font-size:12px;color:#555;margin-top:2px;">排序 slide_*.md，逐张追加 <code>## Slide N</code> + 图片链接 + 描述</div>
+          </div>
+        </div>
+
+        <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:8px 12px;font-family:'SF Mono',Menlo,monospace;font-size:11px;line-height:1.8;color:#374151;">
+          python pptx_to_md.py \<br>
+          &nbsp;&nbsp;--input deck.pptx \<br>
+          &nbsp;&nbsp;--output ./out/ \<br>
+          &nbsp;&nbsp;<strong>--merge-only</strong>
+        </div>
+        <div style="margin-top:6px;font-size:11.5px;color:#555;line-height:1.7;">
+          输出 <code>stem.md</code>；unfilled stub 以 <code>*[not yet described]*</code> 占位<br>
+          可多次运行，已 filled 的幻灯片不会被清除
+        </div>
+      </div>
+
+      <!-- Standalone mode path -->
+      <div style="flex:1;background:#fff;border:1px solid #d1d5db;border-radius:12px;padding:14px 16px;">
+        <div style="font-size:12px;font-weight:700;color:#6b7280;margin-bottom:8px;letter-spacing:.3px;">🔧 STANDALONE 模式路径</div>
+
+        <div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:8px;">
+          <span class="badge" style="background:#f59e0b;width:26px;height:26px;font-size:11px;flex-shrink:0;margin-top:2px;">4b</span>
+          <div>
+            <div style="font-size:13px;font-weight:600;">Vision + OCR 上下文（并行）</div>
+            <div style="font-size:12px;color:#555;margin-top:2px;">ThreadPoolExecutor；OCR 文字注入提示词；逐张写 per_page MD</div>
+          </div>
+        </div>
+
+        <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:10px 12px;font-size:12px;color:#555;line-height:1.8;margin-bottom:10px;">
+          有 OCR → <code>VISION_PROMPT_WITH_OCR</code><br>
+          无 OCR → <code>VISION_PROMPT_NO_OCR</code><br>
+          Resume：跳过无 sentinel 的文件<br>
+          <code>max_tokens=1024</code>，描述写入 per_page MD
+        </div>
+
+        <div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:8px;">
+          <span class="badge green" style="width:26px;height:26px;font-size:11px;flex-shrink:0;margin-top:2px;">5b</span>
+          <div style="font-size:13px;font-weight:600;color:#166534;">自动 merge → stem.md</div>
+        </div>
+
+        <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:10px 12px;font-family:'SF Mono',Menlo,monospace;font-size:11px;line-height:1.9;color:#374151;">
+          # my_deck<br><br>
+          ## Slide 1<br>
+          ![](my_deck/slides/slide_001.png)<br>
+          {Vision 描述文本}<br><br>
+          ## Slide 2<br>
+          ![](my_deck/slides/slide_002.png)<br>
+          {Vision 描述文本}<br>
+          …
+        </div>
+
+        <div style="margin-top:8px;" class="warn-box">
+          <code>max_tokens=1024</code> 硬编码，
+          复杂幻灯片（大量表格/流程图）可能被截断。
+          Agent 模式无此限制。
+        </div>
+      </div>
+    </div>
+
+  </div><!-- end loop-wrap -->
+
+  <div class="arrow">
+    <div class="arrow-line"></div>
+    <div class="arrow-head"></div>
+    <div class="arrow-label">下一文件 / 全部完成</div>
+  </div>
+
+  <!-- ── Vision 内容分类 ── -->
+  <div class="parallel-strip">
+    <div class="para-header">
+      <span class="badge" style="background:#0369a1;width:26px;height:26px;font-size:11px;">🧠</span>
+      Vision 内容分类与处理策略（Agent / Standalone 通用）
+    </div>
+
+    <div style="margin-bottom:10px;font-size:12px;color:#0369a1;">
+      OCR 文字辅助识别词汇；Vision 聚焦结构关系。Subagent prompt（中文，SKILL.md 定义）要求描述：标题/副标题 · 正文层级 · 流程图节点与箭头 · 图表数值与坐标轴 · 对比布局 · 完整表格
+    </div>
+
+    <table style="width:100%;border-collapse:collapse;font-size:12px;">
+      <tr style="background:#e0f2fe;">
+        <th style="padding:6px 10px;text-align:left;color:#0c4a6e;border-bottom:1px solid #bae6fd;">幻灯片类型</th>
+        <th style="padding:6px 10px;text-align:left;color:#0c4a6e;border-bottom:1px solid #bae6fd;">Vision 判断行为</th>
+        <th style="padding:6px 10px;text-align:left;color:#0c4a6e;border-bottom:1px solid #bae6fd;">Markdown 输出</th>
+      </tr>
+      <tr style="border-bottom:1px solid #e0f2fe;">
+        <td style="padding:7px 10px;font-weight:600;">📋 标准内容页</td>
+        <td style="padding:7px 10px;color:#555;">识别标题 + 正文，判断层级结构；OCR 辅助词汇核对</td>
+        <td style="padding:7px 10px;color:#555;font-family:monospace;font-size:11px;"># 标题<br>- 要点<br>&nbsp;&nbsp;- 子要点</td>
+      </tr>
+      <tr style="border-bottom:1px solid #e0f2fe;background:#f8fcff;">
+        <td style="padding:7px 10px;font-weight:600;">🔷 流程图 / 架构图</td>
+        <td style="padding:7px 10px;color:#555;">提取节点名称、箭头方向、连接关系（OCR 辅助节点文字）</td>
+        <td style="padding:7px 10px;color:#555;font-family:monospace;font-size:11px;">A → B → C<br>↓ D（分支）</td>
+      </tr>
+      <tr style="border-bottom:1px solid #e0f2fe;">
+        <td style="padding:7px 10px;font-weight:600;">📊 图表 / 数据</td>
+        <td style="padding:7px 10px;color:#555;">提取数值、坐标轴标签、趋势；OCR 辅助数字确认</td>
+        <td style="padding:7px 10px;color:#555;font-family:monospace;font-size:11px;">| 月份 | 数量 |<br>|------|------|<br>| 1月 | 518 |</td>
+      </tr>
+      <tr style="border-bottom:1px solid #e0f2fe;background:#f8fcff;">
+        <td style="padding:7px 10px;font-weight:600;">⬛ 对比布局（左右/上下）</td>
+        <td style="padding:7px 10px;color:#555;">分别描述各区域，说明对比关系</td>
+        <td style="padding:7px 10px;color:#555;font-family:monospace;font-size:11px;">**左：** 方案A<br>**右：** 方案B</td>
+      </tr>
+      <tr>
+        <td style="padding:7px 10px;font-weight:600;">📋 嵌入表格</td>
+        <td style="padding:7px 10px;color:#555;">完整识别行列结构，含合并单元格语义；OCR 辅助单元格内容</td>
+        <td style="padding:7px 10px;color:#555;font-family:monospace;font-size:11px;">| A | B |<br>|---|---|</td>
+      </tr>
+    </table>
+  </div>
+
+  <div class="arrow"><div class="arrow-line"></div><div class="arrow-head"></div></div>
+
+  <!-- ── Summary output ── -->
+  <div class="output-box">
+    <div class="out-title">✅ 最终输出结构</div>
+    <div class="out-struct">
+      output_dir/<br>
+      &nbsp;&nbsp;├── 文件A.md &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;← 最终合并 Markdown（--merge-only 生成）<br>
+      &nbsp;&nbsp;└── 文件A/<br>
+      &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├── slides/<br>
+      &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├── slide_001.png &nbsp;← 96dpi PNG（持久保存）<br>
+      &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;├── slide_002.png<br>
+      &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;└── …<br>
+      &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└── per_page/<br>
+      &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├── slide_001.md &nbsp;&nbsp;← 已填写（无 sentinel）<br>
+      &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├── slide_002.md &nbsp;&nbsp;← 桩文件（含 sentinel，待处理）<br>
+      &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└── …
+    </div>
+    <div style="margin-top:12px;font-size:12px;color:#374151;line-height:1.9;">
+      · PDF 临时文件（<code>tempfile.TemporaryDirectory</code>）处理完自动清除<br>
+      · PNG + per_page MDs <strong>持久保存</strong>，中断后可续跑（<code>--resume</code> 默认开启）<br>
+      · per_page MD 首行含 sentinel → 未处理；无 sentinel → 已填写<br>
+      · <code>--merge-only</code> 可多次运行；unfilled stub 以 <code>*[not yet described]*</code> 占位<br>
+      · 控制台打印：总文件数 · 总幻灯片数 · OCR 命中率 · 输出路径
+    </div>
+  </div>
+
+</div><!-- end pipeline -->
+
+<script>
+function toggle(el) {
+  el.classList.toggle('open');
+}
+</script>
+</body>
+</html>

@@ -3,7 +3,7 @@
 
 Reads each wiki page's YAML frontmatter `sources:` list and replaces the
 ## 来源 section with [[sources/xxx|display_name]] wikilinks.
-Requires pyyaml: pip install pyyaml
+Requires pyyaml: pip install pyyaml  (or use ~/.venvs/paddleocr/bin/python)
 """
 import argparse
 import re
