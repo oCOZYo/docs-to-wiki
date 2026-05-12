@@ -15,17 +15,8 @@ import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
-def _find_ocr_script() -> Path:
-    """Locate ocr_extract.py relative to this script's position in the repo."""
-    # This script: <repo>/skills/docs-to-wiki/scripts/03_run_ocr.py
-    # OCR script:  <repo>/skills/pdf-to-md/scripts/ocr_extract.py
-    ocr = Path(__file__).resolve().parent.parent.parent / "pdf-to-md" / "scripts" / "ocr_extract.py"
-    if ocr.exists():
-        return ocr
-    raise FileNotFoundError(f"Cannot find ocr_extract.py at {ocr}")
-
-
-OCR_SCRIPT = _find_ocr_script()
+OCR_SCRIPT = Path(__file__).resolve().parent.parent.parent / "pdf-to-md/scripts/ocr_extract.py"
+VENV_PY = Path.home() / ".venvs/paddleocr/bin/python"
 
 
 def sanitize(name: str) -> str:
@@ -71,7 +62,7 @@ def run_batch(args: tuple) -> tuple[int, int, list[str]]:
     env["PADDLEOCR_API_URL"] = api_url
     try:
         result = subprocess.run(
-            ["python3", str(OCR_SCRIPT), str(batch_path), str(out_dir)],
+            [str(VENV_PY), str(OCR_SCRIPT), str(batch_path), str(out_dir)],
             env=env, capture_output=True, text=True, timeout=3600,
         )
         ok = result.stdout.count("Saved")
