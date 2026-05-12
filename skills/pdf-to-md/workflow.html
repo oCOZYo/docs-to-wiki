@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PDF-to-MD 工作流</title>
+<style>
+body { font-family: system-ui, sans-serif; background: #111; color: #ddd; margin: 0; padding: 40px 20px; }
+.container { max-width: 800px; margin: 0 auto; }
+h1 { font-size: 1.6rem; color: #fff; margin-bottom: 8px; }
+.sub { color: #888; margin-bottom: 32px; }
+.flow { position: relative; }
+.step { background: #1a1d27; border: 1px solid #2a2d3a; border-radius: 10px; margin-bottom: 12px; cursor: pointer; transition: border-color .2s; }
+.step:hover { border-color: #6c5ce7; }
+.step-head { padding: 16px 20px; display: flex; align-items: center; gap: 12px; }
+.num { width: 28px; height: 28px; border-radius: 7px; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: .85rem; flex-shrink: 0; }
+.n1 { background: #00b89422; color: #00b894; }
+.n2 { background: #fdcb6e22; color: #fdcb6e; }
+.n3 { background: #74b9ff22; color: #74b9ff; }
+.n4 { background: #a29bfe22; color: #a29bfe; }
+.n5 { background: #e1705522; color: #e17055; }
+.step-title { flex: 1; font-weight: 600; font-size: .95rem; }
+.tag { font-size: .7rem; padding: 2px 7px; border-radius: 5px; background: #fff1; color: #888; }
+.arrow { text-align: center; color: #444; font-size: 1.2rem; margin: 2px 0; }
+.body { display: none; padding: 0 20px 18px; }
+.open .body { display: block; }
+.open { border-color: #6c5ce7; }
+pre { background: #0d0f14; border: 1px solid #2a2d3a; border-radius: 8px; padding: 14px; font-size: .8rem; line-height: 1.6; overflow-x: auto; margin: 10px 0; }
+.cmd { color: #00cec9; }
+.flag { color: #fdcb6e; }
+.str { color: #00b894; }
+.cmt { color: #636e83; }
+.var { color: #a29bfe; }
+p.note { background: #fdcb6e11; border-left: 3px solid #fdcb6e; border-radius: 0 6px 6px 0; padding: 10px 14px; font-size: .82rem; color: #aaa; margin: 10px 0; }
+p.info { background: #74b9ff11; border-left: 3px solid #74b9ff; border-radius: 0 6px 6px 0; padding: 10px 14px; font-size: .82rem; color: #aaa; margin: 10px 0; }
+p.merge { background: #e1705511; border-left: 3px solid #e17055; border-radius: 0 6px 6px 0; padding: 10px 14px; font-size: .82rem; color: #aaa; margin: 10px 0; }
+.mode { display: flex; gap: 10px; margin: 24px 0; }
+.mode button { flex: 1; padding: 10px; border: 1px solid #2a2d3a; border-radius: 8px; background: #1a1d27; color: #888; cursor: pointer; font-size: .88rem; transition: all .2s; }
+.mode button.on { border-color: #6c5ce7; color: #ddd; background: #6c5ce715; }
+.route { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 24px; }
+.route div { background: #1a1d27; border: 1px solid #2a2d3a; border-radius: 8px; padding: 14px; cursor: pointer; transition: all .2s; }
+.route div:hover, .route div.on { border-color: #6c5ce7; }
+.route h3 { font-size: .88rem; margin: 0 0 4px; }
+.route p { font-size: .75rem; color: #888; margin: 0; }
+.badge { font-size: .65rem; font-weight: 600; padding: 1px 6px; border-radius: 4px; display: inline-block; margin-bottom: 6px; }
+.b1 { background: #00b89422; color: #00b894; }
+.b2 { background: #fdcb6e22; color: #fdcb6e; }
+.b3 { background: #74b9ff22; color: #74b9ff; }
+table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: .82rem; }
+td, th { padding: 6px 10px; border-bottom: 1px solid #2a2d3a; text-align: left; }
+th { color: #888; font-weight: 500; }
+.env { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 10px 0; }
+.env div { background: #0d0f14; border: 1px solid #2a2d3a; border-radius: 6px; padding: 10px; }
+.env code { font-size: .75rem; color: #a29bfe; display: block; margin-bottom: 3px; }
+.env span { font-size: .75rem; color: #888; }
+.out-tree { background: #0d0f14; border: 1px solid #2a2d3a; border-radius: 8px; padding: 14px; font-size: .78rem; line-height: 1.7; font-family: 'SF Mono', monospace; color: #888; margin: 10px 0; }
+.out-tree .dir { color: #74b9ff; }
+.out-tree .file { color: #ddd; }
+.out-tree .new { color: #e17055; font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>PDF / Image &rarr; Markdown</h1>
+  <p class="sub">pdf-to-md skill 工作流程</p>
+
+  <div class="route">
+    <div class="on" onclick="pick(0)">
+      <span class="badge b1">FAST</span>
+      <h3>原生文字 PDF</h3>
+      <p>pymupdf 直接提取，avg &gt;50 ch/pg</p>
+    </div>
+    <div onclick="pick(1)">
+      <span class="badge b2">OCR</span>
+      <h3>扫描/图像 PDF</h3>
+      <p>PaddleOCR v2 异步 API，avg &le;50 ch/pg</p>
+    </div>
+    <div onclick="pick(2)">
+      <span class="badge b3">IMG</span>
+      <h3>图片文件</h3>
+      <p>JPG/PNG/BMP/TIFF/WEBP</p>
+    </div>
+  </div>
+
+  <div class="mode">
+    <button class="on" onclick="mode('agent')">Agent 模式</button>
+    <button onclick="mode('standalone')">Standalone 模式</button>
+  </div>
+
+  <div class="flow">
+    <!-- Step 1 -->
+    <div class="step open" onclick="toggle(this)">
+      <div class="step-head">
+        <div class="num n1">1</div>
+        <div class="step-title">原生文字 PDF 快速提取</div>
+        <span class="tag">pymupdf</span>
+        <span class="tag">秒级</span>
+      </div>
+      <div class="body">
+        <pre><span class="cmd">~/.venvs/general/bin/python</span> \
+  <span class="str">~/.cc-switch/skills/pdf-to-md/scripts/pdf_to_md.py</span> \
+  <span class="flag">--input</span> <span class="str">"&lt;source&gt;"</span> <span class="flag">--output</span> <span class="str">"&lt;output&gt;"</span></pre>
+        <table>
+          <tr><th>avg &gt; 50 ch/pg</th><td>原生 PDF &check; &rarr; 生成 &lt;stem&gt;.md</td></tr>
+          <tr><th>avg &le; 50 ch/pg</th><td>扫描 PDF &cross; &rarr; 跳到 Step 2</td></tr>
+        </table>
+        <p class="info">可选: <code>--large-image-kb 30</code> <code>--no-images</code> <code>--max-images 50</code></p>
+        <p class="info">嵌入大图保存到 <code>&lt;stem&gt;/imgs/</code>，正文留 <code>![](...)</code> 占位符</p>
+      </div>
+    </div>
+
+    <div class="arrow">&darr;</div>
+
+    <!-- Step 1b -->
+    <div class="step" id="s1b" onclick="toggle(this)">
+      <div class="step-head">
+        <div class="num n1">1b</div>
+        <div class="step-title">填写图片描述</div>
+        <span class="tag">Claude Vision</span>
+        <span class="tag">无 API Key</span>
+      </div>
+      <div class="body">
+        <p class="info">Read tool 读图 &rarr; Edit 替换占位符为 Markdown 描述</p>
+        <table>
+          <tr><th>&le; 5 张</th><td>直接逐张读取替换</td></tr>
+          <tr><th>&gt; 5 张</th><td>spawn subagents（每 10-20 张）</td></tr>
+        </table>
+      </div>
+    </div>
+
+    <div class="arrow" id="arrow2">&darr;</div>
+
+    <!-- Step 2 -->
+    <div class="step" onclick="toggle(this)">
+      <div class="step-head">
+        <div class="num n2">2</div>
+        <div class="step-title">OCR 识别（扫描 PDF + 图片）</div>
+        <span class="tag">PaddleOCR v2</span>
+        <span class="tag">异步 API</span>
+      </div>
+      <div class="body">
+        <p class="info"><strong>Cloud</strong> &mdash; 仅需 PADDLEOCR_TOKEN，异步 Jobs API + multipart 上传</p>
+        <pre><span class="cmd">export</span> <span class="var">PADDLEOCR_TOKEN</span>=<span class="str">"your_token"</span>
+<span class="cmd">python3</span> <span class="str">~/.cc-switch/skills/pdf-to-md/scripts/ocr_extract.py</span> \
+  <span class="str">"&lt;source&gt;"</span> <span class="str">"&lt;output&gt;"</span></pre>
+        <table>
+          <tr><th>上传</th><td>multipart/form-data，本地文件 ≤ 50MB</td></tr>
+          <tr><th>大文件</th><td>≥ 45MB PDF 自动拆分，多个 job 并发提交</td></tr>
+          <tr><th>进度</th><td>实时反馈 <code>进度: 12/36 页</code></td></tr>
+          <tr><th>超时</th><td>单 job 30 分钟</td></tr>
+        </table>
+        <p class="info"><strong>optionalPayload 默认开启：</strong> 方向校正、去弯曲、图表识别、版面检测、跨页表格合并、标题层级、Markdown 美化</p>
+        <p class="info"><strong>Local</strong> &mdash; 需 ~/.venvs/paddleocr，仅 PDF</p>
+        <pre><span class="cmd">~/.venvs/paddleocr/bin/python</span> \
+  <span class="str">~/.cc-switch/skills/pdf-to-md/scripts/ocr_extract.py</span> \
+  <span class="str">"&lt;source&gt;"</span> <span class="str">"&lt;output&gt;"</span> <span class="flag">--server_url</span> <span class="str">http://localhost:8111/</span></pre>
+        <p class="note">ocr_extract.py 用<strong>位置参数</strong>，不是 --input/--output</p>
+        <div class="out-tree">
+<span class="dir">&lt;output&gt;/&lt;stem&gt;/</span>
+  <span class="dir">per_page/</span>         逐页 MD（多页时生成）
+  <span class="dir">merged/</span>           全文合并 MD + 下载图片
+  <span class="dir new">pymupdf_raw/</span>      pymupdf 并行提取原文（仅 PDF）
+        </div>
+      </div>
+    </div>
+
+    <div class="arrow">&darr;</div>
+
+    <!-- Step 2b -->
+    <div class="step" onclick="toggle(this)">
+      <div class="step-head">
+        <div class="num n5">2b</div>
+        <div class="step-title">OCR + pymupdf 文字融合</div>
+        <span class="tag">Agent 融合</span>
+        <span class="tag">LLM 智能校验</span>
+      </div>
+      <div class="body">
+        <p class="merge"><strong>核心价值：</strong>pymupdf 文字零误差但无图片内容，OCR 覆盖全文但有识别错误。两者互补，agent 融合后字准最高、覆盖最全。</p>
+        <table>
+          <tr><th>pymupdf 文字丰富</th><td>以 pymupdf 文字为主，OCR 文字为辅交叉校验</td></tr>
+          <tr><th>pymupdf 文字稀疏</th><td>以 OCR 为主（扫描件/图片页）</td></tr>
+        </table>
+        <p class="info">流程：读取 <code>merged/</code> (OCR) + <code>pymupdf_raw/</code> (pymupdf) &rarr; 逐页对比 &rarr; Edit 写入融合结果</p>
+      </div>
+    </div>
+
+    <div class="arrow">&darr;</div>
+
+    <!-- Step 3 -->
+    <div class="step" onclick="toggle(this)">
+      <div class="step-head">
+        <div class="num n3">3</div>
+        <div class="step-title">可选：审查与优化</div>
+        <span class="tag">按需</span>
+      </div>
+      <div class="body">
+        <p class="info">读取 <code>references/optimization-prompt.md</code> 规范，用 Edit 修改</p>
+        <table>
+          <tr><th>修正</th><td>OCR 错误标注 [存疑] 或 [OCR修正]</td></tr>
+          <tr><th>清理</th><td>页眉页脚、冗余空格、乱码</td></tr>
+          <tr><th>格式</th><td>标题层级、引用块、列表、表格</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Standalone -->
+  <div id="standalone" style="display:none">
+    <div class="step open">
+      <div class="step-head">
+        <div class="num n4">S</div>
+        <div class="step-title">Standalone 模式（无人值守）</div>
+        <span class="tag">--api-key</span>
+      </div>
+      <div class="body">
+        <pre><span class="cmd">~/.venvs/general/bin/python</span> \
+  <span class="str">~/.cc-switch/skills/pdf-to-md/scripts/pdf_to_md.py</span> \
+  <span class="flag">--input</span> <span class="str">file.pdf</span> <span class="flag">--output</span> <span class="str">out/</span> \
+  <span class="flag">--api-key</span> <span class="str">sk-ant-...</span> <span class="flag">--model</span> <span class="str">claude-haiku-4-5-20251001</span></pre>
+        <p class="note">可用 <code>export DOCS_TO_WIKI_MODEL=claude-sonnet-4-6</code> 统一覆盖模型</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Env -->
+  <h2 style="font-size:1rem;margin-top:32px;color:#aaa;">环境依赖</h2>
+  <div class="env">
+    <div><code>~/.venvs/general</code><span>pymupdf &mdash; Step 1 + 大文件拆分</span></div>
+    <div><code>~/.venvs/paddleocr</code><span>PaddleOCRVL &mdash; Local OCR</span></div>
+    <div><code>PADDLEOCR_TOKEN</code><span>Cloud OCR 认证 token</span></div>
+    <div><code>ANTHROPIC_API_KEY</code><span>仅 Standalone 模式</span></div>
+    <div><code>DOCS_TO_WIKI_MODEL</code><span>Standalone 覆盖模型</span></div>
+  </div>
+</div>
+
+<script>
+function toggle(el){el.classList.toggle('open')}
+function pick(i){
+  document.querySelectorAll('.route div').forEach((d,j)=>d.classList.toggle('on',j===i));
+  const steps=document.querySelectorAll('.step');
+  steps.forEach(s=>s.style.borderColor='');
+  if(i===0){steps[0].style.borderColor='#00b894'}
+  else{steps[2].style.borderColor='#fdcb6e'}
+}
+function mode(m){
+  document.querySelectorAll('.mode button').forEach((b,j)=>b.classList.toggle('on',j===(m==='agent'?0:1)));
+  document.getElementById('s1b').style.display=m==='agent'?'':'none';
+  document.getElementById('arrow2').style.display=m==='agent'?'':'none';
+  document.getElementById('standalone').style.display=m==='standalone'?'':'none';
+}
+</script>
+</body>
+</html>
