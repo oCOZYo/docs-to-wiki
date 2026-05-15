@@ -94,7 +94,7 @@ Report: total collected, format breakdown.
 
 ```bash
 export ANTHROPIC_API_KEY="..."
-~/.venvs/paddleocr/bin/python \
+~/.venvs/general/bin/python \
   ~/.cc-switch/skills/docx-to-md/scripts/docx_to_md.py \
   --input SOURCE_DIR \
   --output SOURCE_DIR/../<slug>_sources_tmp/ \
@@ -115,19 +115,20 @@ wiki-build stage expects:
 
 ## Stage 2b — PPTX/PPSX → Markdown (delegate to `pptx-to-md`)
 
+`pptx-to-md` is a thin wrapper: it converts PPTX → PDF via LibreOffice and
+then delegates the PDF to `pdf-to-md`. All flags are pass-through.
+
 ```bash
 export ANTHROPIC_API_KEY="..."
-~/.venvs/paddleocr/bin/python \
+~/.venvs/general/bin/python \
   ~/.cc-switch/skills/pptx-to-md/scripts/pptx_to_md.py \
   --input SOURCE_DIR \
   --output SOURCE_DIR/../<slug>_sources_tmp/ \
-  --dpi 150 \
-  --concurrent 5 \
+  --large-image-kb 30 \
   --model claude-haiku-4-5-20251001
 ```
 
-See `~/.cc-switch/skills/pptx-to-md/SKILL.md` for full flag reference (dpi,
-concurrent, max-slides, model).
+See `~/.cc-switch/skills/pptx-to-md/SKILL.md` for the full flag reference.
 
 ### Stage 2b (fallback) — PPTX/PPSX → PDF only (no Vision)
 
@@ -150,7 +151,7 @@ and only outputs `.md` for text PDFs (scanned ones are skipped, to be picked
 up by Stage 3).
 
 ```bash
-~/.venvs/paddleocr/bin/python \
+~/.venvs/general/bin/python \
   ~/.cc-switch/skills/pdf-to-md/scripts/pdf_to_md.py \
   --input SOURCE_DIR \
   --output SOURCE_DIR/../<slug>_sources_tmp/ \
@@ -234,7 +235,7 @@ High-level steps:
 ## Stage 6 — Post-process Wikilinks
 
 ```bash
-~/.venvs/paddleocr/bin/python \
+~/.venvs/general/bin/python \
   ~/.claude/skills/docs-to-wiki/scripts/06_rebuild_source_links.py \
   --wiki-dir WIKI_DIR
 ```

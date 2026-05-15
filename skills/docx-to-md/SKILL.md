@@ -18,7 +18,7 @@ DOCX → python-docx 提取文字/表格 → 图片保存磁盘 → .md 含 ![](
 ### Step 1 — 运行提取脚本
 
 ```bash
-~/.venvs/paddleocr/bin/python \
+~/.venvs/general/bin/python \
   ~/.cc-switch/skills/docx-to-md/scripts/docx_to_md.py \
   --input "<docx_or_dir>" \
   --output "<output_dir>"
@@ -58,7 +58,7 @@ DOCX → python-docx 提取文字/表格 → 图片保存磁盘 → .md 含 ![](
 在 Claude Code 之外做无人值守批处理时，传 `--api-key` 让脚本自行调用 Vision API：
 
 ```bash
-~/.venvs/paddleocr/bin/python \
+~/.venvs/general/bin/python \
   ~/.cc-switch/skills/docx-to-md/scripts/docx_to_md.py \
   --input file.docx --output out/ \
   --api-key sk-ant-... \
@@ -87,7 +87,7 @@ export DOCS_TO_WIKI_MODEL=claude-sonnet-4-6
 
 ## 环境
 
-- `~/.venvs/paddleocr/bin/python`：含 `python-docx`
+- `~/.venvs/general/bin/python`：含 `python-docx`、`pymupdf`
 - `anthropic` 包 + `ANTHROPIC_API_KEY`：仅 standalone 模式（`--api-key`）需要
 - `DOCS_TO_WIKI_MODEL`（可选）：standalone 模式统一覆盖模型，例如 `export DOCS_TO_WIKI_MODEL=claude-sonnet-4-6`
 

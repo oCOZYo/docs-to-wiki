@@ -332,7 +332,7 @@
         <span class="badge pink" style="width:26px;height:26px;font-size:11px;flex-shrink:0;">2b</span>
         <span style="color:#be185d;">PPTX → MD</span>
       </div>
-      <div style="font-size:12px;color:#555;line-height:1.8;">委托 <strong>pptx-to-md</strong> skill<br>PNG 渲染 + OCR 辅助 + Vision 描述</div>
+      <div style="font-size:12px;color:#555;line-height:1.8;">委托 <strong>pptx-to-md</strong> 薄包装层<br>LibreOffice 转 PDF → 再交 pdf-to-md</div>
       <div class="detail2" style="display:none;margin-top:10px;border-top:1px solid #f0f0f0;padding-top:10px;">
         <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:10px 12px;font-family:'SF Mono',Menlo,monospace;font-size:11px;line-height:1.8;margin-bottom:8px;">
           export ANTHROPIC_API_KEY="..."<br>
@@ -340,7 +340,7 @@
           &nbsp;&nbsp;~/.cc-switch/skills/pptx-to-md/scripts/pptx_to_md.py \<br>
           &nbsp;&nbsp;--input SOURCE_DIR \<br>
           &nbsp;&nbsp;--output SOURCE_DIR/../&lt;slug&gt;_sources_tmp/ \<br>
-          &nbsp;&nbsp;--dpi 150 --concurrent 5 \<br>
+          &nbsp;&nbsp;--large-image-kb 30 \<br>
           &nbsp;&nbsp;--model claude-haiku-4-5-20251001
         </div>
         <div class="warn-box" style="font-size:11.5px;">
