@@ -53,6 +53,7 @@ OPTIONAL_PAYLOAD_DEFAULTS = {
     "useDocUnwarping": True,
     "useChartRecognition": True,
     "useLayoutDetection": True,
+    "restructurePages": True,
     "mergeTables": True,
     "relevelTitles": True,
     "prettifyMarkdown": True,
@@ -301,6 +302,7 @@ def process_cloud(source_dir, output_dir, token, *,
                   timeout=DEFAULT_TIMEOUT, max_file_mb=DEFAULT_MAX_FILE_MB,
                   use_orientation=True, use_unwarping=True,
                   use_chart=True, use_layout=True,
+                  restructure_pages=True,
                   merge_tables=True, relevel_titles=True,
                   prettify=True):
     """Process files via PaddleOCR async v2 API."""
@@ -328,6 +330,7 @@ def process_cloud(source_dir, output_dir, token, *,
         useDocUnwarping=use_unwarping,
         useChartRecognition=use_chart,
         useLayoutDetection=use_layout,
+        restructurePages=restructure_pages,
         mergeTables=merge_tables,
         relevelTitles=relevel_titles,
         prettifyMarkdown=prettify,
@@ -573,6 +576,7 @@ modes:
     parser.add_argument("--no-unwarping", action="store_true", help="Disable doc unwarping")
     parser.add_argument("--no-chart", action="store_true", help="Disable chart recognition")
     parser.add_argument("--no-layout", action="store_true", help="Disable layout detection")
+    parser.add_argument("--no-restructure", action="store_true", help="Disable cross-page restructuring (prerequisite for mergeTables/relevelTitles)")
     parser.add_argument("--no-merge-tables", action="store_true", help="Disable cross-page table merging")
     parser.add_argument("--no-relevel-titles", action="store_true", help="Disable heading level recognition")
     parser.add_argument("--no-prettify", action="store_true", help="Disable markdown prettification")
@@ -602,6 +606,7 @@ modes:
             use_unwarping=not args.no_unwarping,
             use_chart=not args.no_chart,
             use_layout=not args.no_layout,
+            restructure_pages=not args.no_restructure,
             merge_tables=not args.no_merge_tables,
             relevel_titles=not args.no_relevel_titles,
             prettify=not args.no_prettify,

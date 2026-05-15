@@ -72,6 +72,7 @@ export PADDLEOCR_TOKEN="your_token"
 - `--model PaddleOCR-VL-1.5`：模型选择
 - `--pages "2,4-6"`：页码范围
 - `--no-chart`：禁用图表识别
+- `--no-restructure`：禁用跨页结构重建（默认开启，影响跨页表格合并和标题层级识别的前提）
 - `--no-merge-tables`：禁用跨页表格合并
 - `--max-file-mb 45`：自动拆分阈值（MB）
 
