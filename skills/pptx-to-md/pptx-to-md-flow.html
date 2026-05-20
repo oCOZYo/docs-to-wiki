@@ -359,7 +359,7 @@
       └── &lt;stem&gt;/<br>
       &nbsp;&nbsp;&nbsp; ├── imgs/&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; <span style="color:#888">← 3A：pymupdf 抽出的嵌入大图</span><br>
       &nbsp;&nbsp;&nbsp; ├── merged/&lt;stem&gt;.md <span style="color:#888">← 3B：OCR 合并文档（&lt;stem&gt;.md 是它的副本）</span><br>
-      &nbsp;&nbsp;&nbsp; ├── per_page/&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; <span style="color:#888">← 3B：每页一份 MD（&gt;1 页时生成）</span><br>
+      &nbsp;&nbsp;&nbsp; ├── per_page/&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; <span style="color:#888">← 3B：每页一份 MD（<strong>仅 --ocr-per-page</strong> 时生成）</span><br>
       &nbsp;&nbsp;&nbsp; └── pymupdf_raw/&nbsp;&nbsp;&nbsp;&nbsp; <span style="color:#888">← 3B：pymupdf 并行抽取的原文（融合用）</span>
     </div>
     <div class="info-box" style="margin-top:10px">
@@ -386,6 +386,7 @@
         <tr><td><code>--max-images</code></td><td class="default">50</td><td>单文档图片上限（费用保护）</td></tr>
         <tr><td><code>--no-images</code></td><td>—</td><td>跳过所有图片，纯文字输出</td></tr>
         <tr><td><code>--no-ocr-fallback</code></td><td>—</td><td><span class="tag new">NEW</span> 禁用 3B 路径；扫描件按"跳过"处理</td></tr>
+        <tr><td><code>--ocr-per-page</code></td><td>—</td><td><span class="tag new">NEW</span> 3B 触发时额外写 <code>per_page/</code>；默认只保留 merged</td></tr>
         <tr><td><code>--api-key</code></td><td>—</td><td>Standalone 模式：脚本自调 Claude Vision 描述图片</td></tr>
         <tr><td><code>--model</code></td><td><code>claude-haiku-4-5-20251001</code></td><td>Standalone 模式的 Vision 模型</td></tr>
         <tr><td><code>--pdf-dir</code></td><td>—</td><td>持久化中间 PDF（默认走临时目录）</td></tr>

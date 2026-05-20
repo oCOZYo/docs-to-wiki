@@ -25,8 +25,8 @@ Two modes:
 Output structure per file (e.g. "report.pdf"):
     output_dir/
       report/
-        per_page/   page-by-page MD files
-        merged/     single concatenated MD file
+        merged/     single concatenated MD file (always written)
+        per_page/   page-by-page MD files (only when --per-page is passed)
 """
 
 import argparse
@@ -253,10 +253,13 @@ def _split_pdf(pdf_path, max_bytes):
     return chunks
 
 
-def _write_output(parsing_results, base_name, file_out_dir, page_offset=0, pymupdf_pages=None):
-    """Write per_page and merged markdown files + download images.
+def _write_output(parsing_results, base_name, file_out_dir, page_offset=0,
+                  pymupdf_pages=None, save_per_page=False):
+    """Write merged markdown + download images. Optionally write per-page files.
 
     If pymupdf_pages is provided, also saves raw pymupdf text for agent-side fusion.
+    Per-page files are skipped unless save_per_page=True (default off — most
+    callers only want the merged document).
     """
     try:
         import requests as req
@@ -267,8 +270,8 @@ def _write_output(parsing_results, base_name, file_out_dir, page_offset=0, pymup
     if not parsing_results:
         return
 
-    # Per-page files
-    if len(parsing_results) > 1:
+    # Per-page files (opt-in)
+    if save_per_page and len(parsing_results) > 1:
         per_page_dir = file_out_dir / "per_page"
         per_page_dir.mkdir(parents=True, exist_ok=True)
         for i, res in enumerate(parsing_results):
@@ -304,7 +307,8 @@ def process_cloud(source_dir, output_dir, token, *,
                   use_chart=True, use_layout=True,
                   restructure_pages=True,
                   merge_tables=True, relevel_titles=True,
-                  prettify=True):
+                  prettify=True,
+                  save_per_page=False):
     """Process files via PaddleOCR async v2 API."""
     try:
         import requests
@@ -405,7 +409,9 @@ def process_cloud(source_dir, output_dir, token, *,
                     break
 
             if success and all_results:
-                _write_output(all_results, base_name, file_out_dir, pymupdf_pages=pymupdf_pages)
+                _write_output(all_results, base_name, file_out_dir,
+                              pymupdf_pages=pymupdf_pages,
+                              save_per_page=save_per_page)
                 converted += 1
                 print(f"  → 输出: {file_out_dir}")
 
@@ -447,7 +453,7 @@ def _check_local_deps():
         sys.exit(1)
 
 
-def process_local(source_dir, output_dir, server_url):
+def process_local(source_dir, output_dir, server_url, *, save_per_page=False):
     _check_local_deps()
     # Skip external connectivity check — irrelevant when using a local/intranet VLM server
     os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
@@ -486,26 +492,27 @@ def process_local(source_dir, output_dir, server_url):
             pages_res = list(pipeline.predict(pdf_path))
             print(f"    Got {len(pages_res)} pages")
 
-            print("  - Restructuring per-page (merge_tables + relevel_titles)...")
-            per_page_res = pipeline.restructure_pages(
-                pages_res, merge_tables=True, relevel_titles=True,
-            )
-            per_page_list = per_page_res if isinstance(per_page_res, list) else [per_page_res]
+            if save_per_page:
+                print("  - Restructuring per-page (merge_tables + relevel_titles)...")
+                per_page_res = pipeline.restructure_pages(
+                    pages_res, merge_tables=True, relevel_titles=True,
+                )
+                per_page_list = per_page_res if isinstance(per_page_res, list) else [per_page_res]
 
-            per_page_dir = os.path.join(pdf_out_dir, "per_page")
-            os.makedirs(per_page_dir, exist_ok=True)
-            for i, item in enumerate(per_page_list):
-                try:
-                    item.save_to_markdown(save_path=per_page_dir)
-                except Exception as e:
-                    print(f"    page {i} save_to_markdown failed: {e}")
-                try:
-                    item.save_to_json(save_path=per_page_dir)
-                except Exception as e:
-                    print(f"    page {i} save_to_json failed: {e}")
+                per_page_dir = os.path.join(pdf_out_dir, "per_page")
+                os.makedirs(per_page_dir, exist_ok=True)
+                for i, item in enumerate(per_page_list):
+                    try:
+                        item.save_to_markdown(save_path=per_page_dir)
+                    except Exception as e:
+                        print(f"    page {i} save_to_markdown failed: {e}")
+                    try:
+                        item.save_to_json(save_path=per_page_dir)
+                    except Exception as e:
+                        print(f"    page {i} save_to_json failed: {e}")
 
-            per_page_files = [f for f in os.listdir(per_page_dir) if f.endswith(".md")]
-            print(f"    Saved {len(per_page_files)} per-page MD + JSON → {per_page_dir}")
+                per_page_files = [f for f in os.listdir(per_page_dir) if f.endswith(".md")]
+                print(f"    Saved {len(per_page_files)} per-page MD + JSON → {per_page_dir}")
 
             print("  - Restructuring merged (concatenate_pages=True)...")
             merged_res = pipeline.restructure_pages(
@@ -580,6 +587,9 @@ modes:
     parser.add_argument("--no-merge-tables", action="store_true", help="Disable cross-page table merging")
     parser.add_argument("--no-relevel-titles", action="store_true", help="Disable heading level recognition")
     parser.add_argument("--no-prettify", action="store_true", help="Disable markdown prettification")
+    parser.add_argument("--per-page", action="store_true",
+                        help="Also save per-page MD files under <stem>/per_page/ "
+                             "(default: merged only)")
 
     # Timing
     parser.add_argument("--poll-interval", type=int, default=DEFAULT_POLL_INTERVAL,
@@ -610,10 +620,11 @@ modes:
             merge_tables=not args.no_merge_tables,
             relevel_titles=not args.no_relevel_titles,
             prettify=not args.no_prettify,
+            save_per_page=args.per_page,
         )
     else:
         server_url = args.server_url or "http://localhost:8111/"
-        process_local(source_dir, output_dir, server_url)
+        process_local(source_dir, output_dir, server_url, save_per_page=args.per_page)
 
     print("\nAll done!")
 

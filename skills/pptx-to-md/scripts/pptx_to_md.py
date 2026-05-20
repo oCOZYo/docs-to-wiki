@@ -78,6 +78,8 @@ def main():
                     help="Persist intermediate PDFs here (default: temp dir, deleted after)")
     ap.add_argument("--no-ocr-fallback", action="store_true",
                     help="Disable auto-OCR for scanned PDFs (passed through to pdf_to_md.py)")
+    ap.add_argument("--ocr-per-page", action="store_true",
+                    help="When OCR fallback runs, also save per-page MD files (passed through)")
     args = ap.parse_args()
 
     if not PDF_TO_MD.exists():
@@ -110,6 +112,8 @@ def main():
         pdf_args += ["--model", args.model]
     if args.no_ocr_fallback:
         pdf_args.append("--no-ocr-fallback")
+    if args.ocr_per_page:
+        pdf_args.append("--ocr-per-page")
 
     # Phase 1: PPTX → PDFs into pdf_dir (persistent if --pdf-dir, else tempdir)
     tmp_ctx = tempfile.TemporaryDirectory() if args.pdf_dir is None else None

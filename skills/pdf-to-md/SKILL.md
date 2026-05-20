@@ -44,6 +44,7 @@ export PADDLEOCR_TOKEN="your_token"   # 扫描件 fallback 用（可选但强烈
 - `--no-images`：纯文字模式，跳过所有图片
 - `--max-images 50`：单文档图片数上限
 - `--no-ocr-fallback`：禁用扫描件自动 OCR（用户只想要快速路径时）
+- `--ocr-per-page`：OCR fallback 触发时，额外保存逐页 MD（默认只保留合并文件）
 
 如果只有图片文件（非 PDF），跳过此步直接进 Step 2（图片不走 `pdf_to_md.py`）。
 
@@ -81,11 +82,12 @@ export PADDLEOCR_TOKEN="your_token"
 - `--no-restructure`：禁用跨页结构重建（默认开启，影响跨页表格合并和标题层级识别的前提）
 - `--no-merge-tables`：禁用跨页表格合并
 - `--max-file-mb 45`：自动拆分阈值（MB）
+- `--per-page`：额外保存逐页 MD（默认只保留合并文件）
 
 OCR 输出结构（也是 `pdf_to_md.py` 自动 fallback 时的产物）：
 - `<output>/<stem>.md` — 顶层入口（fallback 时由 `pdf_to_md.py` 从 `merged/` 提升上来；直接调时**不会自动提升**）
-- `<output>/<stem>/per_page/` — 逐页独立 MD（仅多页时生成）
-- `<output>/<stem>/merged/<stem>.md` — 全文合并 MD
+- `<output>/<stem>/merged/<stem>.md` — 全文合并 MD（始终输出）
+- `<output>/<stem>/per_page/` — 逐页独立 MD（**默认不写**，需传 `--per-page` / `--ocr-per-page`）
 - `<output>/<stem>/pymupdf_raw/<stem>.md` — pymupdf 并行提取的原文（仅 PDF 文件生成）
 
 ### Step 2b — OCR + pymupdf 文字融合（有 pymupdf_raw 时）

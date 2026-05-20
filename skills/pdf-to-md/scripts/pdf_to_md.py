@@ -164,11 +164,13 @@ def call_vision(blob: bytes, media_type: str, model: str, client) -> str:
     return resp.content[0].text.strip()
 
 
-def run_ocr_fallback(pdf_path: Path, output_dir: Path, token: str) -> Path | None:
+def run_ocr_fallback(pdf_path: Path, output_dir: Path, token: str,
+                     save_per_page: bool = False) -> Path | None:
     """Invoke ocr_extract.py on a single PDF, then promote merged/<stem>.md to top level.
 
     Returns the path to <output_dir>/<stem>.md on success, or None on failure.
-    Side effect: leaves <output_dir>/<stem>/{merged,per_page,pymupdf_raw}/ on disk.
+    Side effect: leaves <output_dir>/<stem>/merged/ on disk (+ per_page/ if requested,
+    + pymupdf_raw/).
     """
     if not OCR_EXTRACT.exists():
         print(f"  OCR fallback unavailable: {OCR_EXTRACT} not found", flush=True)
@@ -179,12 +181,11 @@ def run_ocr_fallback(pdf_path: Path, output_dir: Path, token: str) -> Path | Non
         src_file = Path(src_dir) / pdf_path.name
         shutil.copy2(pdf_path, src_file)
         env = {**os.environ, "PADDLEOCR_TOKEN": token}
+        cmd = [sys.executable, str(OCR_EXTRACT), src_dir, str(output_dir)]
+        if save_per_page:
+            cmd.append("--per-page")
         try:
-            result = subprocess.run(
-                [sys.executable, str(OCR_EXTRACT), src_dir, str(output_dir)],
-                env=env,
-                timeout=1800,
-            )
+            result = subprocess.run(cmd, env=env, timeout=1800)
         except subprocess.TimeoutExpired:
             print("  OCR timed out after 30 minutes", flush=True)
             return None
@@ -211,6 +212,7 @@ def convert(
     standalone_client=None,
     model: str = "claude-haiku-4-5-20251001",
     no_ocr_fallback: bool = False,
+    ocr_per_page: bool = False,
 ) -> tuple[Path | None, str]:
     """Convert one PDF. Returns (output_path, status) where status is 'text'|'scanned'|'ocr'|'error'."""
     try:
@@ -230,7 +232,7 @@ def convert(
                 f"set PADDLEOCR_TOKEN to enable auto-OCR"
             )
         print(f"  scanned PDF (avg {avg_chars:.0f} ch/pg) → PaddleOCR", flush=True)
-        out = run_ocr_fallback(pdf_path, output_dir, token)
+        out = run_ocr_fallback(pdf_path, output_dir, token, save_per_page=ocr_per_page)
         if out:
             return out, f"ocr (avg {avg_chars:.0f} ch/pg)"
         return None, f"scanned (avg {avg_chars:.0f} ch/pg) — OCR failed"
@@ -318,6 +320,12 @@ def main():
         help="Disable auto-OCR for scanned PDFs (default: auto-call ocr_extract.py "
              "when PADDLEOCR_TOKEN is set)",
     )
+    ap.add_argument(
+        "--ocr-per-page",
+        action="store_true",
+        help="When OCR fallback runs, also save per-page MD files under "
+             "<output>/<stem>/per_page/ (default: merged only)",
+    )
     args = ap.parse_args()
 
     extract_images = not args.no_images
@@ -356,6 +364,7 @@ def main():
             standalone_client=standalone_client,
             model=args.model,
             no_ocr_fallback=args.no_ocr_fallback,
+            ocr_per_page=args.ocr_per_page,
         )
         print(status)
         if out:
