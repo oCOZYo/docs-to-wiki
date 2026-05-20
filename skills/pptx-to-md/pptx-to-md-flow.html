@@ -2,7 +2,7 @@
 <html lang="zh">
 <head>
 <meta charset="UTF-8">
-<title>pptx-to-md 处理流程</title>
+<title>pptx-to-md / pdf-to-md 处理流程</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
@@ -25,7 +25,7 @@
     margin-bottom: 40px;
   }
   .pipeline {
-    max-width: 820px;
+    max-width: 860px;
     margin: 0 auto;
     display: flex;
     flex-direction: column;
@@ -33,6 +33,7 @@
     gap: 0;
   }
 
+  /* ── Node cards ── */
   .node {
     width: 100%;
     background: #fff;
@@ -59,6 +60,7 @@
   .badge.gray   { background: #6b7280; }
   .badge.teal   { background: #0d9488; }
   .badge.pink   { background: #ec4899; }
+  .badge.red    { background: #ef4444; }
 
   .node-title { font-size: 15px; font-weight: 600; flex: 1; }
   .node-desc  { font-size: 13px; color: #555; margin-top: 2px; }
@@ -71,8 +73,9 @@
   .tag.para { background: #fef3c7; color: #92400e; }
   .tag.io   { background: #d1fae5; color: #065f46; }
   .tag.opt  { background: #f3e8ff; color: #7c3aed; }
-  .tag.del  { background: #ede9fe; color: #5b21b6; }
+  .tag.new  { background: #ecfeff; color: #0e7490; }
 
+  /* expandable detail */
   .node-detail {
     display: none;
     margin-top: 14px;
@@ -85,6 +88,7 @@
   }
   .node.open .chevron { transform: rotate(180deg); }
 
+  /* params table */
   .params { width: 100%; border-collapse: collapse; font-size: 12.5px; margin-top: 8px; }
   .params th {
     background: #f8fafc; text-align: left; padding: 6px 10px;
@@ -98,11 +102,14 @@
   }
   .default { color: #6366f1; font-weight: 600; }
 
+  /* arrows */
   .arrow {
     display: flex; flex-direction: column; align-items: center;
     height: 36px; position: relative;
   }
-  .arrow-line { width: 2px; background: #d1d5db; flex: 1; }
+  .arrow-line {
+    width: 2px; background: #d1d5db; flex: 1;
+  }
   .arrow-head {
     width: 0; height: 0;
     border-left: 6px solid transparent;
@@ -115,6 +122,49 @@
     font-size: 11px; color: #9ca3af; white-space: nowrap;
   }
 
+  /* branch / fork */
+  .branch {
+    width: 100%;
+    display: flex; gap: 12px; align-items: stretch;
+  }
+  .branch-side {
+    flex: 1; background: #fff; border-radius: 12px;
+    padding: 14px 16px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.07);
+    font-size: 13px;
+    display: flex; flex-direction: column;
+  }
+  .branch-side .bl { font-weight: 600; margin-bottom: 6px; font-size: 13px; }
+  .branch-side ul { padding-left: 18px; color: #555; line-height: 1.8; }
+  .branch-label {
+    text-align: center; font-size: 11px; font-weight: 600;
+    margin-bottom: 6px; color: #6b7280; letter-spacing: .5px; text-transform: uppercase;
+  }
+  .branch-side.text-path { border-left: 4px solid #10b981; }
+  .branch-side.ocr-path  { border-left: 4px solid #f59e0b; }
+
+  /* mode strip */
+  .mode-strip {
+    width: 100%; background: #fff7ed;
+    border: 1px solid #fed7aa; border-radius: 12px;
+    padding: 14px 18px;
+  }
+  .mode-header {
+    display: flex; align-items: center; gap: 8px;
+    font-weight: 700; font-size: 13.5px; margin-bottom: 10px;
+    color: #c2410c;
+  }
+
+  /* final output */
+  .output-box {
+    width: 100%; background: #f0fdf4;
+    border: 1px solid #86efac; border-radius: 12px;
+    padding: 16px 20px;
+  }
+  .output-box .out-title { font-weight: 700; font-size: 14px; color: #166534; margin-bottom: 8px; }
+  .out-struct { font-family: "SF Mono", Menlo, monospace; font-size: 12px; color: #374151; line-height: 1.9; }
+
+  /* callouts */
   .info-box {
     background: #f0f9ff; border: 1px solid #bae6fd;
     border-radius: 8px; padding: 10px 14px;
@@ -125,263 +175,223 @@
     border-radius: 8px; padding: 8px 12px;
     font-size: 12px; color: #b91c1c;
   }
-  .green-box {
-    background: #f0fdf4; border: 1px solid #86efac;
-    border-radius: 8px; padding: 10px 14px;
-    font-size: 12px; color: #166534; line-height: 1.7;
-  }
-  .purple-box {
-    background: #faf5ff; border: 1px solid #ddd6fe;
+  .ocr-box {
+    background: #f5f3ff; border: 1px solid #ddd6fe;
     border-radius: 8px; padding: 10px 14px;
     font-size: 12px; color: #5b21b6; line-height: 1.7;
   }
 
-  /* core concept highlight */
-  .concept-strip {
-    width: 100%; background: #faf5ff;
-    border: 1px solid #ddd6fe; border-radius: 12px;
-    padding: 14px 18px; margin-bottom: 0;
+  /* horizontal split for sub-branches inside ocr-path */
+  .substeps {
+    display: flex; flex-direction: column; gap: 6px;
+    margin-top: 8px;
   }
-  .concept-header {
-    font-weight: 700; font-size: 13.5px; margin-bottom: 8px; color: #5b21b6;
+  .substep {
+    font-size: 12px; color: #374151;
+    padding: 4px 8px; border-left: 2px solid #fbbf24;
+    background: #fffbeb; border-radius: 0 4px 4px 0;
   }
-
-  .output-box {
-    width: 100%; background: #f0fdf4;
-    border: 1px solid #86efac; border-radius: 12px;
-    padding: 16px 20px;
-  }
-  .output-box .out-title { font-weight: 700; font-size: 14px; color: #166534; margin-bottom: 8px; }
-  .out-struct { font-family: "SF Mono", Menlo, monospace; font-size: 12px; color: #374151; line-height: 1.9; }
 </style>
 </head>
 <body>
 
-<h1>pptx-to-md 处理流程</h1>
-<p class="subtitle">PPTX → PDF → 委托 pdf-to-md · 本 Skill 是薄包装层 · 更新至当前版本</p>
+<h1>pptx-to-md / pdf-to-md 处理流程</h1>
+<p class="subtitle">点击节点展开细节 · 单一统一入口：<code>pdf_to_md.py</code> 自动 fork 扫描件到 PaddleOCR · 与实际脚本对齐</p>
 
 <div class="pipeline">
 
-  <!-- ── Core concept ── -->
-  <div class="concept-strip">
-    <div class="concept-header">💡 核心架构：薄包装层 + 能力复用</div>
-    <div style="font-size:13px;color:#374151;line-height:1.8;">
-      本 Skill 不再实现自己的 PNG 渲染 / OCR / Vision 流程。
-      所有文字提取、嵌入图保存、Vision 描述逻辑统一由 <strong>pdf-to-md</strong> 维护——
-      pptx-to-md 只负责 <strong>PPTX → PDF</strong> 这一步，之后整批委托给 pdf-to-md。
-      <span style="color:#5b21b6;">pdf-to-md 的任何优化（如未来的视觉密集页智能分流）自动惠及 PPTX。</span>
-    </div>
-    <div style="margin-top:8px;font-size:12px;font-family:'SF Mono',Menlo,monospace;color:#6b7280;line-height:1.8;">
-      PPTX/PPSX → PDF (LibreOffice) → pdf_to_md.py 标准流程
-    </div>
-  </div>
-
-  <div class="arrow"><div class="arrow-line"></div><div class="arrow-head"></div></div>
-
-  <!-- ── Entry ── -->
+  <!-- ── 0. Entry ── -->
   <div class="node" onclick="toggle(this)">
     <div class="node-header">
-      <span class="badge gray">▶</span>
-      <div>
-        <div class="node-title">入口 · 参数解析（全部透传给 pdf-to-md）</div>
-        <div class="node-desc">argparse 解析命令行，文件发现 · 检查 pdf_to_md.py 是否存在</div>
+      <span class="badge blue">0</span>
+      <div style="flex:1">
+        <div class="node-title">入口 CLI</div>
+        <div class="node-desc">PPTX 入口 <code>pptx_to_md.py</code>，PDF 入口 <code>pdf_to_md.py</code>；图片直入 <code>ocr_extract.py</code></div>
       </div>
-      <span class="tag io">I/O</span>
-      <span class="chevron">▼</span>
+      <span class="tag lib">CLI</span>
+      <span class="chevron">▾</span>
     </div>
     <div class="node-detail">
       <table class="params">
-        <tr><th>参数</th><th>默认值</th><th>说明</th></tr>
-        <tr><td><code>--input</code></td><td>必填</td><td>PPTX/PPSX 文件 或 目录</td></tr>
-        <tr><td><code>--output</code></td><td>必填</td><td>输出目录（自动创建）</td></tr>
-        <tr><td><code>--large-image-kb</code></td><td class="default">30</td><td>嵌入图超过此值（KB）才提取/描述</td></tr>
-        <tr><td><code>--max-images</code></td><td class="default">50</td><td>单文档图片数上限（费用保护）</td></tr>
-        <tr><td><code>--no-images</code></td><td>—</td><td>纯文字模式，跳过所有图片，零 API 消耗</td></tr>
-        <tr><td><code>--api-key</code></td><td>—</td><td>Standalone 模式触发（透传给 pdf_to_md.py）</td></tr>
-        <tr><td><code>--model</code></td><td class="default">DOCS_TO_WIKI_MODEL /<br>claude-haiku-4-5-20251001</td><td>Standalone 模式 Vision 模型</td></tr>
-        <tr><td><code>--pdf-dir</code></td><td>—</td><td>持久化中间 PDF 到该目录（默认 tempdir，处理完删）</td></tr>
+        <tr><th>入口</th><th>位置</th><th>处理目标</th></tr>
+        <tr><td><code>pptx_to_md.py</code></td><td><code>~/.cc-switch/skills/pptx-to-md/scripts/</code></td><td>PPTX/PPSX → 调 LibreOffice → 转交 pdf_to_md.py</td></tr>
+        <tr><td><code>pdf_to_md.py</code></td><td><code>~/.cc-switch/skills/pdf-to-md/scripts/</code></td><td>PDF → 文字检测后分两路：pymupdf 或自动 OCR</td></tr>
+        <tr><td><code>ocr_extract.py</code></td><td><code>~/.cc-switch/skills/pdf-to-md/scripts/</code></td><td>位置参数调用；图片走这里，PDF 由 pdf_to_md.py 自动 fork 进来</td></tr>
       </table>
-      <div style="margin-top:10px;" class="info-box">
-        <strong>依赖：</strong>pdf-to-md skill 必须已安装。<br>
-        本脚本通过相对路径定位 <code>~/.cc-switch/skills/pdf-to-md/scripts/pdf_to_md.py</code>，
-        启动前会检查存在性并报错退出。
-      </div>
-      <div style="margin-top:8px;" class="info-box">
-        <strong>Python 路径：</strong><code>~/.venvs/general/bin/python</code>（含 pymupdf，pdf-to-md 依赖）<br>
-        <strong>外部依赖：</strong><code>soffice</code>（LibreOffice）须在 PATH 中
+      <div class="info-box" style="margin-top:12px;">
+        <strong>本图聚焦 PPTX 路径</strong>。原始 PDF 输入跳过 Step 1 直接进入 Step 2；图片输入直接走 <code>ocr_extract.py</code>。
       </div>
     </div>
   </div>
 
   <div class="arrow"><div class="arrow-line"></div><div class="arrow-head"></div></div>
 
-  <!-- ── Phase 1: PPTX → PDF ── -->
+  <!-- ── 1. PPTX → PDF ── -->
   <div class="node" onclick="toggle(this)">
     <div class="node-header">
-      <span class="badge blue">1</span>
-      <div>
-        <div class="node-title">Phase 1 · PPTX → PDF &nbsp;<small style="font-weight:400;color:#888">LibreOffice headless · 逐文件</small></div>
-        <div class="node-desc">soffice 转换，独立 profile 防 lock 冲突，120s 超时；失败写占位 .md 继续</div>
+      <span class="badge indigo">1</span>
+      <div style="flex:1">
+        <div class="node-title">PPTX/PPSX → PDF</div>
+        <div class="node-desc">LibreOffice headless 转换 · <code>soffice --convert-to pdf</code> · profile 隔离防 lock</div>
       </div>
       <span class="tag lib">LibreOffice</span>
-      <span class="chevron">▼</span>
+      <span class="chevron">▾</span>
     </div>
     <div class="node-detail">
       <table class="params">
-        <tr><th>细节</th><th>值</th></tr>
-        <tr><td>命令</td><td><code>soffice --headless --convert-to pdf</code></td></tr>
-        <tr><td>profile 隔离</td><td><code>/tmp/lo_profile_pptx2md_{worker_id}</code></td></tr>
-        <tr><td>超时</td><td>120 秒/文件</td></tr>
-        <tr><td>成功条件</td><td>PDF 存在 且 大小 &gt; 0</td></tr>
-        <tr><td>PDF 存储</td><td>默认 tempdir（处理完删除）；<code>--pdf-dir</code> 可持久化</td></tr>
+        <tr><th>项</th><th>说明</th></tr>
+        <tr><td>命令</td><td><code>soffice -env:UserInstallation=file:///tmp/soffice_&lt;wid&gt; --headless --convert-to pdf --outdir &lt;dir&gt; &lt;pptx&gt;</code></td></tr>
+        <tr><td>Profile 隔离</td><td>每个 worker 用独立 <code>UserInstallation</code>，多文件并行不互锁</td></tr>
+        <tr><td>超时</td><td>120 秒（单文件）</td></tr>
+        <tr><td>中间产物</td><td>临时目录（默认）或 <code>--pdf-dir</code> 持久化</td></tr>
+        <tr><td>失败处理</td><td>写 <code>*[PDF conversion failed]*</code> 占位 .md，继续下一个文件</td></tr>
       </table>
-      <div class="error-box error" style="background:#fff1f2;border:1px dashed #fca5a5;border-radius:10px;padding:10px 16px;font-size:12.5px;color:#b91c1c;margin-top:10px;">
-        <strong>失败路径：</strong>转换失败时写 <code>{stem}.md</code> 内容为 <code>*[PDF conversion failed]*</code>，
-        继续处理其他文件（不阻断 Phase 2）
-      </div>
-      <div style="margin-top:8px;" class="info-box">
-        <strong>注：</strong>macOS 下 LibreOffice 的 <code>--convert-to png</code> 仅导出第一页，
-        因此必须走 PDF 路径——之前的 PNG-per-slide 方案已删除。
+      <div class="info-box" style="margin-top:10px">
+        LibreOffice 转出的 PDF <strong>通常带文字层</strong>（PPTX 中的文本框保留为 PDF text objects），所以 Step 2 大概率走快速路径。若 PPTX 完全由扫描图组成，则会触发 Step 2 的 OCR 分支。
       </div>
     </div>
   </div>
 
-  <div class="arrow">
-    <div class="arrow-line"></div>
-    <div class="arrow-head"></div>
-    <div class="arrow-label">所有 PPTX 转完</div>
-  </div>
+  <div class="arrow"><div class="arrow-line"></div><div class="arrow-head"></div></div>
 
-  <!-- ── Phase 2: Delegate to pdf-to-md ── -->
+  <!-- ── 2. Text-PDF detection ── -->
   <div class="node" onclick="toggle(this)">
     <div class="node-header">
       <span class="badge purple">2</span>
-      <div>
-        <div class="node-title">Phase 2 · 委托 pdf-to-md &nbsp;<small style="font-weight:400;color:#888">一次性批处理</small></div>
-        <div class="node-desc">subprocess 调用 pdf_to_md.py --input &lt;pdf_dir&gt; --output &lt;output_dir&gt;，所有参数透传</div>
+      <div style="flex:1">
+        <div class="node-title">PDF 文字密度检测（决策点）</div>
+        <div class="node-desc"><code>pdf_to_md.py</code> 用 pymupdf 计算平均字符/页，决定走哪条分支</div>
       </div>
-      <span class="tag del">delegate</span>
-      <span class="chevron">▼</span>
+      <span class="tag lib">pymupdf</span>
+      <span class="chevron">▾</span>
     </div>
     <div class="node-detail">
-      <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:12px 14px;font-family:'SF Mono',Menlo,monospace;font-size:11px;line-height:1.8;margin-bottom:10px;">
-        sys.executable \<br>
-        &nbsp;&nbsp;~/.cc-switch/skills/pdf-to-md/scripts/pdf_to_md.py \<br>
-        &nbsp;&nbsp;--input &lt;pdf_dir&gt; --output &lt;output_dir&gt; \<br>
-        &nbsp;&nbsp;--large-image-kb 30 --max-images 50 \<br>
-        &nbsp;&nbsp;[--no-images] [--api-key …] [--model …]
-      </div>
-      <div class="purple-box">
-        <strong>为什么用一次性批处理而不是逐文件调用？</strong><br>
-        pdf_to_md.py 接受目录作为 input，会自动遍历所有 PDF。一次性调用避免
-        为每个 PPTX 单独 fork Python 进程，减少 pymupdf 重复加载开销。
-      </div>
-      <div style="margin-top:10px;" class="info-box">
-        <strong>pdf-to-md 内部流程（不在本 Skill 范围）：</strong><br>
-        · <code>is_text_pdf()</code> 判断原生文字 vs 扫描（LibreOffice 转出的通常是原生文字 PDF）<br>
-        · pymupdf 直接提取文字（保留标题层级，按 font-size 启发式）<br>
-        · 嵌入大图（≥ <code>large-image-kb</code>）保存到 <code>&lt;stem&gt;/imgs/</code><br>
-        · 文字中插入 <code>![](…)</code> 占位符<br>
-        · Agent 模式：返回 Agent 用 Vision 填写占位符<br>
-        · Standalone 模式：脚本内部 <code>call_vision()</code> 自行填写
+      <table class="params">
+        <tr><th>项</th><th>值 / 说明</th></tr>
+        <tr><td>判定函数</td><td><code>is_text_pdf(doc)</code> → 返回 <code>(is_text, avg_chars)</code></td></tr>
+        <tr><td>阈值</td><td><code>TEXT_THRESHOLD = 50</code>（平均字符/页 &gt; 50 视为文字 PDF）</td></tr>
+        <tr><td>状态字符串</td><td><code>text (avg N ch/pg, K images extracted)</code> / <code>ocr (avg N ch/pg)</code> / <code>scanned ... — set PADDLEOCR_TOKEN</code></td></tr>
+      </table>
+      <div class="ocr-box" style="margin-top:10px">
+        <strong>分支决策：</strong>文字密度高 → 左侧 pymupdf 路径；密度低 → 右侧 PaddleOCR 路径（需 <code>PADDLEOCR_TOKEN</code>，否则跳过）。
       </div>
     </div>
   </div>
 
-  <div class="arrow">
-    <div class="arrow-line"></div>
-    <div class="arrow-head"></div>
-    <div class="arrow-label">完成</div>
+  <div class="arrow"><div class="arrow-line"></div><div class="arrow-head"></div></div>
+
+  <!-- ── 3. Fork: text vs OCR ── -->
+  <div class="branch">
+
+    <!-- LEFT: text PDF -->
+    <div class="branch-side text-path">
+      <div class="branch-label" style="color:#059669">3A · pymupdf 文字路径（快速）</div>
+      <div class="bl">逐页结构化提取</div>
+      <ul>
+        <li><code>page.get_text("dict")</code> 拿到 blocks</li>
+        <li>用 <strong>中位数字号</strong> 作 body，按 size/body 比例推 H1/H2/H3</li>
+        <li>段落间垂直距离 &gt; <code>1.5×body</code> 时插空行</li>
+        <li>嵌入大图 &gt; <code>--large-image-kb</code>（默认 30KB）保存到 <code>imgs/</code> 留 <code>![](...)</code> 占位</li>
+        <li>非空白 page → 段落用 <code>"\n\n---\n\n"</code> 拼接</li>
+      </ul>
+      <div class="info-box" style="margin-top:auto">
+        <strong>输出：</strong><code>&lt;output&gt;/&lt;stem&gt;.md</code> + <code>&lt;output&gt;/&lt;stem&gt;/imgs/img_NNN.{jpg,png,gif}</code>。Agent 用 Read tool 读图、Edit 替换占位符。
+      </div>
+    </div>
+
+    <!-- RIGHT: scanned PDF / OCR fallback -->
+    <div class="branch-side ocr-path">
+      <div class="branch-label" style="color:#b45309">3B · PaddleOCR fallback（自动）</div>
+      <div class="bl">PDF 直接吃，无 PNG 中间环节</div>
+      <ul>
+        <li>校验 <code>PADDLEOCR_TOKEN</code>；未设置则跳过并提示</li>
+        <li><code>subprocess.run(ocr_extract.py, src_tmpdir, output_dir)</code></li>
+        <li>1800 秒（30 分钟）总超时</li>
+        <li>结束后将 <code>&lt;output&gt;/&lt;stem&gt;/merged/&lt;stem&gt;.md</code> 复制为 <code>&lt;output&gt;/&lt;stem&gt;.md</code>（顶层入口对齐文字路径）</li>
+      </ul>
+      <div class="substeps">
+        <div class="substep"><strong>3B-1</strong> multipart 上传整个 PDF（&gt;45MB 自动按页拆 chunk）</div>
+        <div class="substep"><strong>3B-2</strong> 提交 async job → 轮询进度 <code>extractedPages/totalPages</code></div>
+        <div class="substep"><strong>3B-3</strong> 并行抽 pymupdf 原文（备份 / 后续融合）</div>
+        <div class="substep"><strong>3B-4</strong> 拉 JSONL，写 <code>merged/</code>、<code>per_page/</code>、<code>pymupdf_raw/</code>，下载图片</div>
+      </div>
+    </div>
+
   </div>
 
-  <!-- ── Agent fill image step ── -->
-  <div class="node" onclick="toggle(this)">
-    <div class="node-header">
-      <span class="badge teal">3</span>
-      <div>
-        <div class="node-title">填写图片描述 &nbsp;<small style="font-weight:400;color:#888">Agent 模式 · 有嵌入图时执行</small></div>
-        <div class="node-desc">由调用方 agent 完成（pdf-to-md SKILL.md Step 1b）：Read 图片 → Edit 替换占位符</div>
-      </div>
-      <span class="tag opt">Agent 接力</span>
-      <span class="chevron">▼</span>
+  <div class="arrow"><div class="arrow-line"></div><div class="arrow-head"></div></div>
+
+  <!-- ── 4. Image / image-desc handling ── -->
+  <div class="mode-strip">
+    <div class="mode-header">
+      <span class="badge orange" style="width:24px;height:24px;font-size:11px">4</span>
+      图片描述（仅 3A 路径有 <code>![](...)</code> 占位符）
     </div>
-    <div class="node-detail">
-      <div style="display:flex;gap:10px;margin-bottom:10px;">
-        <div style="flex:1;background:#f0fdf4;border:1px solid #86efac;border-radius:6px;padding:10px 12px;font-size:12px;">
-          <strong style="color:#166534;">≤ 5 张图片</strong><br>
-          直接用 Read tool 逐张读取<br>
-          Edit 替换占位符
+    <div style="display:flex; gap:12px;">
+      <div style="flex:1; background:#fff; border-radius:8px; padding:10px 12px;">
+        <div style="font-size:13px;font-weight:600;color:#0369a1;">Agent 模式（默认）</div>
+        <div style="font-size:12px;color:#555;margin-top:4px;line-height:1.7;">
+          <strong>≤5 张：</strong>主 agent 用 Read + Edit 替换<br>
+          <strong>&gt;5 张：</strong>spawn subagents（每个 10–20 张），图片 base64 只进 subagent 上下文，节省主上下文
         </div>
-        <div style="flex:1;background:#f0f9ff;border:1px solid #bae6fd;border-radius:6px;padding:10px 12px;font-size:12px;">
-          <strong style="color:#0369a1;">&gt; 5 张 / 多文件批量</strong><br>
-          spawn subagents（每个 10–20 张）<br>
-          图片字节只进 subagent 上下文
+      </div>
+      <div style="flex:1; background:#fff; border-radius:8px; padding:10px 12px;">
+        <div style="font-size:13px;font-weight:600;color:#be185d;">Standalone 模式（<code>--api-key</code>）</div>
+        <div style="font-size:12px;color:#555;margin-top:4px;line-height:1.7;">
+          脚本自调 Claude Vision，inline 描述写入 MD<br>
+          仅用户明确要求"无人值守/cron"时使用；OCR 路径不受影响
         </div>
       </div>
-      <div class="info-box">
-        本步骤逻辑完全复用 pdf-to-md 的 Step 1b，无需在 pptx-to-md SKILL.md 中重复说明
-      </div>
+    </div>
+    <div class="warn-box" style="margin-top:10px">
+      <strong>注意：</strong>3B 路径（OCR）已直接产出完整 MD，不需要图片占位填写流程。
     </div>
   </div>
 
   <div class="arrow"><div class="arrow-line"></div><div class="arrow-head"></div></div>
 
-  <!-- ── Standalone mode ── -->
-  <div class="node" onclick="toggle(this)">
-    <div class="node-header">
-      <span class="badge orange">S</span>
-      <div>
-        <div class="node-title">Standalone 模式 &nbsp;<small style="font-weight:400;color:#888">仅用户明确要求时</small></div>
-        <div class="node-desc">--api-key 透传给 pdf_to_md.py，由其自行调用 Vision，适合后台/cron 无人值守</div>
-      </div>
-      <span class="tag api">--api-key</span>
-      <span class="chevron">▼</span>
-    </div>
-    <div class="node-detail">
-      <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:12px 14px;font-family:'SF Mono',Menlo,monospace;font-size:11px;line-height:1.9;color:#374151;margin-bottom:10px;">
-        ~/.venvs/general/bin/python \<br>
-        &nbsp;&nbsp;~/.cc-switch/skills/pptx-to-md/scripts/pptx_to_md.py \<br>
-        &nbsp;&nbsp;--input deck.pptx --output out/ \<br>
-        &nbsp;&nbsp;<strong>--api-key sk-ant-...</strong> --model claude-haiku-4-5-20251001
-      </div>
-      <div class="warn-box">
-        即使环境中存在 <code>ANTHROPIC_API_KEY</code> 也不自动传入；
-        Agent 模式（不传 <code>--api-key</code>）始终是默认推荐。
-      </div>
-    </div>
-  </div>
-
-  <div class="arrow"><div class="arrow-line"></div><div class="arrow-head"></div></div>
-
-  <!-- ── Limitation note ── -->
-  <div class="warn-box" style="width:100%;background:#fff7ed;border:1px solid #fed7aa;border-radius:12px;padding:14px 18px;color:#9a3412;font-size:13px;">
-    <strong>⚠ 已知简化（与旧版差异）：</strong><br>
-    旧版本对每张幻灯片单独渲染 PNG → OCR → Vision，能精确还原视觉布局（流程图箭头、左右对比、架构图连接线）。
-    本版本走 PDF 文字路径，PPTX 中通过空间布局表达的信息会变成线性阅读顺序，<strong>会丢失部分视觉关系</strong>。
-    <br><br>
-    <strong>未来路径：</strong>如果需要精确还原视觉结构，应在 <code>pdf-to-md</code> 端
-    增加"视觉密集页"识别 + Vision 整页描述的分流逻辑——一处优化，pdf/pptx 都受益。
-    本 Skill 不再重复实现该能力。
-  </div>
-
-  <div class="arrow"><div class="arrow-line"></div><div class="arrow-head"></div></div>
-
-  <!-- ── Final output ── -->
+  <!-- ── 5. Output ── -->
   <div class="output-box">
-    <div class="out-title">✅ 最终输出结构（与 pdf-to-md 一致）</div>
+    <div class="out-title">5 · 最终产出结构</div>
     <div class="out-struct">
-      output_dir/<br>
-      &nbsp;&nbsp;├── 文件A.md &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;← 文字 + 图片占位符<br>
-      &nbsp;&nbsp;└── 文件A/<br>
-      &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└── imgs/<br>
-      &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├── img_001.png &nbsp;← 嵌入大图（持久保存）<br>
-      &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└── …
+      &lt;output_dir&gt;/<br>
+      ├── &lt;stem&gt;.md&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; <span style="color:#888">← 顶层入口（两条路径一致）</span><br>
+      └── &lt;stem&gt;/<br>
+      &nbsp;&nbsp;&nbsp; ├── imgs/&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; <span style="color:#888">← 3A：pymupdf 抽出的嵌入大图</span><br>
+      &nbsp;&nbsp;&nbsp; ├── merged/&lt;stem&gt;.md <span style="color:#888">← 3B：OCR 合并文档（&lt;stem&gt;.md 是它的副本）</span><br>
+      &nbsp;&nbsp;&nbsp; ├── per_page/&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; <span style="color:#888">← 3B：每页一份 MD（&gt;1 页时生成）</span><br>
+      &nbsp;&nbsp;&nbsp; └── pymupdf_raw/&nbsp;&nbsp;&nbsp;&nbsp; <span style="color:#888">← 3B：pymupdf 并行抽取的原文（融合用）</span>
     </div>
-    <div style="margin-top:12px;font-size:12px;color:#374151;line-height:1.9;">
-      · 中间 PDF：默认 tempdir 处理完删除；<code>--pdf-dir</code> 可持久化便于排查<br>
-      · 嵌入图持久保存在 <code>&lt;stem&gt;/imgs/</code>，agent 可在任意时间点 Read<br>
-      · PPTX → PDF 失败：写入 <code>*[PDF conversion failed]*</code> 占位 .md，不阻断其他文件<br>
-      · 已移除：per_page 桩文件、slide_NNN.png 渲染、PaddleOCR 调用、--merge-only 模式（统统不再需要）
+    <div class="info-box" style="margin-top:10px">
+      <strong>融合（可选 Step 6）：</strong>3B 路径产出后，agent 可读 <code>merged/&lt;stem&gt;.md</code> 与 <code>pymupdf_raw/&lt;stem&gt;.md</code>，逐页交叉校验（pymupdf 原文优先，OCR 补图片区域文字）。
+    </div>
+  </div>
+
+  <!-- ── Key parameter recap ── -->
+  <div class="node" onclick="toggle(this)" style="margin-top:32px">
+    <div class="node-header">
+      <span class="badge gray">P</span>
+      <div style="flex:1">
+        <div class="node-title">关键参数与环境变量</div>
+        <div class="node-desc">所有 PPTX-level 参数透传给 <code>pdf_to_md.py</code></div>
+      </div>
+      <span class="chevron">▾</span>
+    </div>
+    <div class="node-detail">
+      <table class="params">
+        <tr><th>参数 / 变量</th><th>默认</th><th>作用</th></tr>
+        <tr><td><code>--input</code></td><td>—</td><td>PPTX/PPSX 文件或目录</td></tr>
+        <tr><td><code>--output</code></td><td>—</td><td>输出目录</td></tr>
+        <tr><td><code>--large-image-kb</code></td><td class="default">30</td><td>嵌入图大于此 KB 才提取（仅 3A 路径）</td></tr>
+        <tr><td><code>--max-images</code></td><td class="default">50</td><td>单文档图片上限（费用保护）</td></tr>
+        <tr><td><code>--no-images</code></td><td>—</td><td>跳过所有图片，纯文字输出</td></tr>
+        <tr><td><code>--no-ocr-fallback</code></td><td>—</td><td><span class="tag new">NEW</span> 禁用 3B 路径；扫描件按"跳过"处理</td></tr>
+        <tr><td><code>--api-key</code></td><td>—</td><td>Standalone 模式：脚本自调 Claude Vision 描述图片</td></tr>
+        <tr><td><code>--model</code></td><td><code>claude-haiku-4-5-20251001</code></td><td>Standalone 模式的 Vision 模型</td></tr>
+        <tr><td><code>--pdf-dir</code></td><td>—</td><td>持久化中间 PDF（默认走临时目录）</td></tr>
+        <tr><td><code>PADDLEOCR_TOKEN</code></td><td>—</td><td><strong>环境变量</strong>；设置后 3B 路径才会启用（不走 CLI，避免 token 进 shell 历史）</td></tr>
+        <tr><td><code>DOCS_TO_WIKI_MODEL</code></td><td>—</td><td>环境变量；统一覆盖 standalone 模式的 model</td></tr>
+      </table>
     </div>
   </div>
 

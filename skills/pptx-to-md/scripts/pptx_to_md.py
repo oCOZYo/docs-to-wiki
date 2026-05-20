@@ -76,6 +76,8 @@ def main():
                     help="Vision model for standalone mode (env: DOCS_TO_WIKI_MODEL)")
     ap.add_argument("--pdf-dir", default=None,
                     help="Persist intermediate PDFs here (default: temp dir, deleted after)")
+    ap.add_argument("--no-ocr-fallback", action="store_true",
+                    help="Disable auto-OCR for scanned PDFs (passed through to pdf_to_md.py)")
     args = ap.parse_args()
 
     if not PDF_TO_MD.exists():
@@ -106,6 +108,8 @@ def main():
         pdf_args += ["--api-key", args.api_key]
     if args.model:
         pdf_args += ["--model", args.model]
+    if args.no_ocr_fallback:
+        pdf_args.append("--no-ocr-fallback")
 
     # Phase 1: PPTX → PDFs into pdf_dir (persistent if --pdf-dir, else tempdir)
     tmp_ctx = tempfile.TemporaryDirectory() if args.pdf_dir is None else None

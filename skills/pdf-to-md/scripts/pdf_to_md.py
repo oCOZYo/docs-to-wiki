@@ -26,13 +26,18 @@ Usage:
 import argparse
 import base64
 import os
+import shutil
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 try:
     import fitz
 except ImportError:
     sys.exit("ERROR: pip install pymupdf")
+
+OCR_EXTRACT = Path(__file__).resolve().parent / "ocr_extract.py"
 
 VISION_PROMPT = """这是一份PDF文档中的嵌入图片。请描述图片的完整内容：
 - 如果是流程图/架构图：描述各节点名称和连接关系
@@ -159,6 +164,44 @@ def call_vision(blob: bytes, media_type: str, model: str, client) -> str:
     return resp.content[0].text.strip()
 
 
+def run_ocr_fallback(pdf_path: Path, output_dir: Path, token: str) -> Path | None:
+    """Invoke ocr_extract.py on a single PDF, then promote merged/<stem>.md to top level.
+
+    Returns the path to <output_dir>/<stem>.md on success, or None on failure.
+    Side effect: leaves <output_dir>/<stem>/{merged,per_page,pymupdf_raw}/ on disk.
+    """
+    if not OCR_EXTRACT.exists():
+        print(f"  OCR fallback unavailable: {OCR_EXTRACT} not found", flush=True)
+        return None
+
+    stem = pdf_path.stem
+    with tempfile.TemporaryDirectory(prefix="pdf_ocr_src_") as src_dir:
+        src_file = Path(src_dir) / pdf_path.name
+        shutil.copy2(pdf_path, src_file)
+        env = {**os.environ, "PADDLEOCR_TOKEN": token}
+        try:
+            result = subprocess.run(
+                [sys.executable, str(OCR_EXTRACT), src_dir, str(output_dir)],
+                env=env,
+                timeout=1800,
+            )
+        except subprocess.TimeoutExpired:
+            print("  OCR timed out after 30 minutes", flush=True)
+            return None
+        if result.returncode != 0:
+            print(f"  OCR exited with code {result.returncode}", flush=True)
+            return None
+
+    merged = output_dir / stem / "merged" / f"{stem}.md"
+    if not merged.exists():
+        print(f"  OCR produced no merged output at {merged}", flush=True)
+        return None
+
+    final = output_dir / f"{stem}.md"
+    shutil.copy2(merged, final)
+    return final
+
+
 def convert(
     pdf_path: Path,
     output_dir: Path,
@@ -167,8 +210,9 @@ def convert(
     max_images: int,
     standalone_client=None,
     model: str = "claude-haiku-4-5-20251001",
+    no_ocr_fallback: bool = False,
 ) -> tuple[Path | None, str]:
-    """Convert one PDF. Returns (output_path, status) where status is 'text'|'scanned'|'error'."""
+    """Convert one PDF. Returns (output_path, status) where status is 'text'|'scanned'|'ocr'|'error'."""
     try:
         doc = fitz.open(str(pdf_path))
     except Exception as e:
@@ -177,7 +221,19 @@ def convert(
     is_text, avg_chars = is_text_pdf(doc)
     if not is_text:
         doc.close()
-        return None, f"scanned (avg {avg_chars:.0f} ch/pg)"
+        if no_ocr_fallback:
+            return None, f"scanned (avg {avg_chars:.0f} ch/pg) — OCR fallback disabled"
+        token = os.environ.get("PADDLEOCR_TOKEN")
+        if not token:
+            return None, (
+                f"scanned (avg {avg_chars:.0f} ch/pg) — "
+                f"set PADDLEOCR_TOKEN to enable auto-OCR"
+            )
+        print(f"  scanned PDF (avg {avg_chars:.0f} ch/pg) → PaddleOCR", flush=True)
+        out = run_ocr_fallback(pdf_path, output_dir, token)
+        if out:
+            return out, f"ocr (avg {avg_chars:.0f} ch/pg)"
+        return None, f"scanned (avg {avg_chars:.0f} ch/pg) — OCR failed"
 
     threshold = large_image_kb * 1024
     stem = pdf_path.stem
@@ -256,6 +312,12 @@ def main():
         default=os.environ.get("DOCS_TO_WIKI_MODEL", "claude-haiku-4-5-20251001"),
         help="Vision model when --api-key is set (env: DOCS_TO_WIKI_MODEL)",
     )
+    ap.add_argument(
+        "--no-ocr-fallback",
+        action="store_true",
+        help="Disable auto-OCR for scanned PDFs (default: auto-call ocr_extract.py "
+             "when PADDLEOCR_TOKEN is set)",
+    )
     args = ap.parse_args()
 
     extract_images = not args.no_images
@@ -293,6 +355,7 @@ def main():
             max_images=args.max_images,
             standalone_client=standalone_client,
             model=args.model,
+            no_ocr_fallback=args.no_ocr_fallback,
         )
         print(status)
         if out:
@@ -302,7 +365,12 @@ def main():
 
     print(f"\nDone: {converted} converted, {skipped} skipped (scanned/error) → {output_dir}")
     if skipped:
-        print("  Skipped files need PaddleOCR — run 03_run_ocr.py on them.")
+        if args.no_ocr_fallback:
+            print("  Skipped scanned PDFs — drop --no-ocr-fallback (and set PADDLEOCR_TOKEN) to enable OCR.")
+        elif not os.environ.get("PADDLEOCR_TOKEN"):
+            print("  Skipped scanned PDFs — set PADDLEOCR_TOKEN to enable auto-OCR.")
+        else:
+            print("  Some files failed OCR — see status lines above.")
     if mode == "agent" and converted > 0:
         print("\nNext: ask Claude Code to fill in the ![](...) image placeholders.")
 
